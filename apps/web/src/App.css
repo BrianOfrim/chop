@@ -59,17 +59,6 @@
   color: var(--ink);
 }
 
-.date-badge {
-  margin-left: auto;
-  font-size: 0.82rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  background: rgba(31, 111, 120, 0.12);
-  border: 1px solid rgba(31, 111, 120, 0.25);
-  border-radius: 999px;
-  padding: 0.2rem 0.7rem;
-}
-
 .main {
   position: relative;
   min-height: 0;

@@ -6,17 +6,9 @@ import {
   type LakeIndexEntry,
   type SpotProfile,
 } from "./lib/lakeAssets";
-import {
-  fetchHrdpsWindForDate,
-  formatWind,
-  strongestWindHourIndex,
-  type WindForecast,
-} from "./lib/wind";
+import { fetchHrdpsWind, formatWind, type WindForecast } from "./lib/wind";
 import type { LakeGrids } from "@chop/wave-engine";
 import "./App.css";
-
-/** Historical day to load (HRDPS via Open-Meteo). */
-const DISPLAY_DATE = "2026-08-02";
 
 export default function App() {
   const [lakes, setLakes] = useState<LakeIndexEntry[]>([]);
@@ -60,13 +52,23 @@ export default function App() {
         const lat = proxy?.latitude ?? loaded.spot.identity.latitude;
         const lon = proxy?.longitude ?? loaded.spot.identity.longitude;
         try {
-          const wind = await fetchHrdpsWindForDate(lat, lon, DISPLAY_DATE);
+          const wind = await fetchHrdpsWind(lat, lon);
           if (cancelled) return;
           setForecast(wind);
-          setHourIndex(strongestWindHourIndex(wind.hours));
+          const now = Date.now();
+          let best = 0;
+          let bestDiff = Infinity;
+          wind.hours.forEach((h, i) => {
+            const d = Math.abs(new Date(h.time).getTime() - now);
+            if (d < bestDiff) {
+              bestDiff = d;
+              best = i;
+            }
+          });
+          setHourIndex(best);
         } catch (windErr) {
           if (!cancelled) {
-            setError(`Wind data unavailable: ${String(windErr)}`);
+            setError(`Wind forecast unavailable: ${String(windErr)}`);
           }
         }
       } catch (e) {
@@ -115,16 +117,11 @@ export default function App() {
             ))}
           </select>
         </label>
-        <span className="date-badge" title="Historical HRDPS day">
-          {DISPLAY_DATE}
-        </span>
       </header>
 
       <main className="main">
         {error && <div className="banner error">{error}</div>}
-        {loading && (
-          <div className="banner">Loading lake & HRDPS for {DISPLAY_DATE}…</div>
-        )}
+        {loading && <div className="banner">Loading lake & HRDPS wind…</div>}
         {grids && spot && shoreline && (
           <MapView
             grids={grids}
@@ -142,9 +139,7 @@ export default function App() {
             <>
               <span>{formatWind(wind.windSpeedMps, wind.windDirDeg)}</span>
               <span className="muted">{timeLabel}</span>
-              <span className="muted">
-                HRDPS · {forecast?.date ?? DISPLAY_DATE}
-              </span>
+              <span className="muted">model {forecast?.model}</span>
             </>
           )}
         </div>
