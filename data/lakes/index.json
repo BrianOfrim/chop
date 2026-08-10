@@ -6,6 +6,34 @@
       "region": "Alberta, Canada",
       "enabled": true,
       "path": "/lakes/ca-ab-pigeon-lake"
+    },
+    {
+      "id": "ca-ab-abraham-lake",
+      "name": "Abraham Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-abraham-lake"
+    },
+    {
+      "id": "ca-ab-sylvan-lake",
+      "name": "Sylvan Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-sylvan-lake"
+    },
+    {
+      "id": "ca-ab-gull-lake",
+      "name": "Gull Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-gull-lake"
+    },
+    {
+      "id": "ca-ab-keho-lake",
+      "name": "Keho Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-keho-lake"
     }
   ]
 }

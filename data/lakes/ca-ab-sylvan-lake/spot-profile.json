@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-sylvan-lake",
+  "identity": {
+    "name": "Sylvan Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Red Deer",
+    "latitude": 52.35706,
+    "longitude": -114.15899,
+    "elevationM": 960,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "foil"
+    ],
+    "waterType": "inland_lake",
+    "summary": "Popular central Alberta recreation lake near Red Deer. Synoptic wind primary; modest fetch compared to Pigeon; busy beaches in summer."
+  },
+  "geometry": {
+    "shape": "irregular_basin",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Town and summer villages on south/east shores; pick launch by wind direction."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "NW",
+      "W",
+      "SW",
+      "SE",
+      "E"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 52.35706,
+      "longitude": -114.15899,
+      "description": "Central open-water cell"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "sylvan-beach",
+      "name": "Sylvan Lake beach / town waterfront",
+      "latitude": 52.31,
+      "longitude": -114.1,
+      "shore": "southeast",
+      "bestWindDirs": [
+        "NW",
+        "N",
+        "W"
+      ],
+      "notes": "Busy public beach; confirm local rules."
+    }
+  ]
+}

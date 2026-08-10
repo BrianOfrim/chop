@@ -96,8 +96,15 @@ export function strongestWindHourIndex(hours: WindHour[]): number {
   return best;
 }
 
-export function formatWind(mps: number, fromDeg: number): string {
-  const kt = mps * 1.94384;
+export function formatWindKt(mps: number): string {
+  return `${(mps * 1.94384).toFixed(0)} kt`;
+}
+
+export function formatWind(
+  mps: number,
+  fromDeg: number,
+  gustMps?: number | null,
+): string {
   const dirs = [
     "N",
     "NNE",
@@ -117,5 +124,20 @@ export function formatWind(mps: number, fromDeg: number): string {
     "NNW",
   ];
   const i = Math.round((((fromDeg % 360) + 360) % 360) / 22.5) % 16;
-  return `${kt.toFixed(0)} kt from ${dirs[i]} (${fromDeg.toFixed(0)}°)`;
+  const gust =
+    gustMps != null && Number.isFinite(gustMps)
+      ? ` G${(gustMps * 1.94384).toFixed(0)}`
+      : "";
+  return `${formatWindKt(mps)}${gust} from ${dirs[i]} (${fromDeg.toFixed(0)}°)`;
+}
+
+/** Compact label for the map wind arrow (mean + gust). */
+export function formatWindMapLabel(
+  mps: number,
+  gustMps?: number | null,
+): string {
+  if (gustMps != null && Number.isFinite(gustMps)) {
+    return `${formatWindKt(mps)} G${(gustMps * 1.94384).toFixed(0)}`;
+  }
+  return formatWindKt(mps);
 }

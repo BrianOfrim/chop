@@ -20,6 +20,7 @@
   border-bottom: none;
   border-top: 1px solid var(--line);
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .brand {
@@ -136,15 +137,27 @@
 
 .hover-card {
   position: absolute;
-  top: 0.85rem;
-  left: 0.85rem;
   z-index: 2;
+  pointer-events: none;
+  max-width: 220px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 0.5rem 0.7rem;
+  padding: 0.55rem 0.75rem;
   font-size: 0.8rem;
   line-height: 1.35;
+  box-shadow: 0 6px 18px rgba(20, 28, 24, 0.12);
+}
+
+.hover-primary {
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+
+.hover-meta {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .readout {
@@ -162,8 +175,8 @@
 }
 
 .scrubber {
-  flex: 1 1 220px;
-  max-width: 520px;
+  width: 100%;
+  max-width: none;
 }
 
 .scrubber input[type="range"] {
@@ -171,14 +184,132 @@
   accent-color: var(--accent);
 }
 
-.ride-marker {
-  width: 14px;
-  height: 14px;
-  color: #9a3412;
-  font-size: 18px;
-  line-height: 14px;
-  text-shadow: 0 0 2px #fff;
-  cursor: pointer;
+.forecast-panel {
+  flex: 1 1 280px;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.wind-chart {
+  width: 100%;
+}
+
+.wind-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 0.1rem;
+}
+
+.wind-chart-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.wind-chart-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.wind-chart-legend .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  margin-right: 0.15rem;
+  vertical-align: middle;
+}
+
+.wind-chart-legend .swatch.wind {
+  background: var(--accent);
+}
+
+.wind-chart-legend .swatch.gust {
+  background: #b45309;
+  height: 0;
+  border-top: 2px dashed #b45309;
+}
+
+.wind-chart-legend .swatch.wind-bar {
+  width: 8px;
+  height: 10px;
+  background: #2f6f9f;
+  border-radius: 1px;
+}
+
+.wind-chart-legend .swatch.gust-cap {
+  width: 10px;
+  height: 3px;
+  background: #7eb8d8;
+  border-radius: 1px;
+}
+
+.wind-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.wind-chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+.wind-chart-day-div {
+  stroke: rgba(28, 36, 32, 0.18);
+  stroke-width: 1;
+}
+
+.wind-chart-tick {
+  fill: var(--muted);
+  font-size: 8px;
+}
+
+.wind-chart-day {
+  fill: var(--muted);
+  font-size: 8px;
+}
+
+.wind-chart-day-top {
+  fill: var(--ink);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.wind-chart-hour {
+  fill: var(--ink);
+  font-size: 8px;
+}
+
+.wind-chart-bar {
+  fill: #2f6f9f;
+}
+
+.wind-chart-gust-cap {
+  fill: #8ec5e0;
+}
+
+.wind-bar-group.selected .wind-chart-bar {
+  fill: #1f5a86;
+}
+
+.wind-bar-group.selected .wind-chart-gust-cap {
+  fill: #5aafd0;
+}
+
+.wind-chart-selection {
+  fill: rgba(28, 36, 32, 0.06);
+  pointer-events: none;
 }
 
 .maplibregl-ctrl-attrib {

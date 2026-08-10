@@ -1,0 +1,330 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-abraham-lake",
+  "identity": {
+    "name": "Abraham Lake",
+    "alternateNames": [
+      "Lake Abraham"
+    ],
+    "region": "David Thompson Country / Canadian Rockies front ranges, Alberta",
+    "nearestTowns": [
+      "Nordegg",
+      "Rocky Mountain House",
+      "Saskatchewan River Crossing"
+    ],
+    "latitude": 52.20662,
+    "longitude": -116.40467,
+    "elevationM": 1340,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "snowkite"
+    ],
+    "waterType": "mountain_reservoir",
+    "summary": "Long, narrow Rockies front-range reservoir (~32 \u00d7 3.3 km) along the North Saskatchewan valley / Hwy 11. Strong days are driven by valley-channeled synoptic flow, mountain thermals, and orographic acceleration\u2014not prairie lake-breeze. Famous for wind-scoured clear ice in winter (Windy Point)."
+  },
+  "geometry": {
+    "surfaceAreaKm2": 53.7,
+    "maxLengthKm": 32.0,
+    "maxWidthKm": 3.3,
+    "shape": "elongated_valley_reservoir",
+    "longAxis": "roughly_SW_NE_to_WSW_ENE_along_North_Saskatchewan_valley",
+    "surroundingTerrain": "steep_front_range_mountains_and_canyon_walls",
+    "dam": {
+      "name": "Bighorn Dam",
+      "location": "northeast / downstream end near Windy Point",
+      "notes": "Reservoir level rises through summer; beach width shrinks late season."
+    },
+    "notes": "Fetch is highly anisotropic: very long along-valley, short across-valley. Wave state and usable wind depend strongly on whether flow is aligned with the valley."
+  },
+  "windRegime": {
+    "primaryType": "valley_channeled_synoptic",
+    "secondaryType": "mountain_thermal",
+    "tertiaryType": "orographic_acceleration",
+    "gapVenturi": true,
+    "orographic": "high",
+    "primaryDirections": [
+      "SW",
+      "W",
+      "NE",
+      "E",
+      "NW"
+    ],
+    "directionNotes": "Expect along-valley preference. West/southwest mountain-lee and Pacific-influenced flow often accelerates through the corridor; easterly/northeasterly return or drainage flows can also run the valley. Cross-valley winds are blocked/turbulent near walls. Local kiters report consistent thermal enhancement on suitable days. Exact best launch depends on which way the valley is flushing.",
+    "seasonality": {
+      "spring": "Frontal passages + snowmelt season; cold water; variable reservoir level.",
+      "summer": "Thermal + valley flow; kiters note relatively consistent wind; water very cold (glacial rock flour blue); beaches better early/mid summer before full pool.",
+      "fall": "Stronger synoptic gradients return; windy corridor days common.",
+      "winter": "Strong scouring winds keep ice clear at places like Windy Point; snowkite possible when ice safe\u2014extreme wind chill and ice hazards."
+    },
+    "contrastToPigeonLake": "Pigeon = prairie synoptic + weak lake breeze on a round basin. Abraham = mountain valley channeling + thermal/orographic on a long thin reservoir. Do not reuse Pigeon enhancer constants."
+  },
+  "proxyPoints": [
+    {
+      "id": "mid_lake",
+      "role": "background_model_point",
+      "latitude": 52.20662,
+      "longitude": -116.40467,
+      "description": "Central basin cell for along-valley wind/wave estimates."
+    },
+    {
+      "id": "upstream_sw_valley",
+      "role": "upstream_synoptic_proxy",
+      "latitude": 52.15,
+      "longitude": -116.55,
+      "description": "Toward Kootenay Plains / SW valley approach\u2014background before full channeling."
+    },
+    {
+      "id": "downstream_ne_dam",
+      "role": "gap_exit_proxy",
+      "latitude": 52.31,
+      "longitude": -116.33,
+      "description": "Near Bighorn Dam / Windy Point\u2014often accelerated; useful for NE-end conditions."
+    },
+    {
+      "id": "ridge_level_wind",
+      "role": "orographic_context",
+      "latitude": 52.25,
+      "longitude": -116.45,
+      "description": "Use model winds at ~700\u2013850 hPa / ridge height to detect mountain-wave / strong cross-barrier flow that may not match valley surface dir."
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "windy-point",
+      "name": "Windy Point / dam end",
+      "latitude": 52.3,
+      "longitude": -116.34,
+      "shore": "northeast",
+      "bestWindDirs": [
+        "SW",
+        "W",
+        "S"
+      ],
+      "notes": "Literally named for wind; common access/viewpoint. Expect acceleration and scouring. Confirm legal access and ice/water safety."
+    },
+    {
+      "id": "hwy11-mid-beaches",
+      "name": "Hwy 11 mid-lake gravel/sand beaches",
+      "latitude": 52.23,
+      "longitude": -116.43,
+      "shore": "varies_with_pool_level",
+      "bestWindDirs": [
+        "along_valley_either_way"
+      ],
+      "notes": "Multiple informal pullouts along David Thompson Hwy. Early summer wider beaches; late summer higher pool. Cold water always."
+    },
+    {
+      "id": "south-basin",
+      "name": "Southern basin / Preacher's Point area (generic)",
+      "latitude": 52.15,
+      "longitude": -116.5,
+      "shore": "southwest",
+      "bestWindDirs": [
+        "NE",
+        "E",
+        "N"
+      ],
+      "notes": "Useful when valley flow is out of the NE. Treat pins as approximate\u2014verify current access."
+    }
+  ],
+  "enhancerModel": {
+    "type": "valley_channeling_plus_mountain_thermal",
+    "enabled": true,
+    "status": "seed_uncalibrated",
+    "description": "Two stacked effects: (1) pressure-driven flow accelerated along the mountain valley (gap/venturi-like), (2) daytime heating of slopes/valley floor adding thermal component when sun and weak\u2013moderate background align. Cross-valley synoptic wind may be redirected into along-valley surface flow.",
+    "rulesSeed": {
+      "channelingSpeedupFactor": 1.15,
+      "channelingSpeedupNotes": "Multiply along-valley background by ~1.1\u20131.3 when models show flow aligned with valley and ridge winds are strong\u2014SEED ONLY.",
+      "sunnyThermalAddOnKt": 3,
+      "partlyCloudyAddOnKt": 1,
+      "overcastAddOnKt": 0,
+      "minBackgroundForThermalKt": 5,
+      "notes": "Thermal add-on may be larger than Pigeon Lake because of mountain slope heating, but gust factor and direction uncertainty are much higher. Calibrate with logger/rider reports."
+    },
+    "triggerLogic": "If valley-aligned synoptic/ridge flow is present, apply channeling boost. If midday sun and not fully overcast, add modest thermal. If models disagree or flow is cross-valley, mark low confidence and expect turbulence near walls.",
+    "diurnal": {
+      "peakWindowLocal": "12:00-18:00_for_thermal_component",
+      "eveningDieOff": "thermal_may_die_synoptic_valley_flow_can_persist",
+      "overnight": "drainage_or_synoptic_possible_gusty"
+    }
+  },
+  "cloudSensitivity": {
+    "level": "moderate_to_high_for_thermal",
+    "notes": "Cloud mainly hits the thermal piece. Strong valley-channeled synoptic days can still blow hard under cloud. Convective cells and mountain thunderstorms can produce dangerous outflow."
+  },
+  "failureModes": [
+    {
+      "id": "extreme_gust_factor",
+      "severity": "high",
+      "description": "Mountain corridor winds are often much gustier than prairie lakes; reports of very strong gusts. Beginner loft risk."
+    },
+    {
+      "id": "cross_valley_rotor_turbulence",
+      "severity": "high",
+      "description": "When upper flow crosses ridges, surface wind near walls can be holey, reversing, or rotor-like even if mid-lake looks OK."
+    },
+    {
+      "id": "wrong_end_of_lake",
+      "severity": "high",
+      "description": "32 km long: upwind end may be light while downwind end is nuking (or vice versa after a shift)."
+    },
+    {
+      "id": "cold_water_exposure",
+      "severity": "high",
+      "description": "Glacial/reservoir water stays cold all season\u2014serious immersion risk."
+    },
+    {
+      "id": "reservoir_level_beach_loss",
+      "severity": "medium",
+      "description": "Rising summer pool reduces beach; late season launches change or disappear."
+    },
+    {
+      "id": "rapid_mountain_weather_change",
+      "severity": "high",
+      "description": "Fronts, cap cloud, and storms develop/arrive fast; limited cell service in places."
+    },
+    {
+      "id": "winter_ice_and_wind_chill",
+      "severity": "seasonal_extreme",
+      "description": "Wind-polished ice is slippery; dam-related ice irregularities; wind chill can be severe. Ice safety is never forecastable from wind alone."
+    },
+    {
+      "id": "boat_and_remote_rescue",
+      "severity": "medium",
+      "description": "Remote corridor; rescue logistics harder than urban prairie lakes."
+    }
+  ],
+  "verification": {
+    "stations": [
+      {
+        "id": "none_on_lake_confirmed",
+        "name": "No dedicated public mid-lake buoy confirmed in profile research",
+        "notes": "Priority calibration gap. Consider portable logger at Windy Point or mid-hwy pullout."
+      }
+    ],
+    "nearbyReferences": [
+      {
+        "id": "regional_models",
+        "description": "HRDPS / HRDPS-continental / ECMWF / ICON at valley vs ridge levels; compare 10 m valley points to 700\u2013850 hPa."
+      },
+      {
+        "id": "nordegg_rocky_metars_if_any",
+        "description": "Nearest official observations are imperfect proxies\u2014valley channeling can differ sharply over short distances."
+      }
+    ],
+    "riderReports": {
+      "suggestedPrompt": "Which end of the lake? Along-valley dir? Gusty vs steady? Thermal afternoon bump? Pool level / beach OK?",
+      "fields": [
+        "date",
+        "launchId",
+        "endOfLake",
+        "rideable",
+        "estimatedKt",
+        "gustFactor",
+        "directionFelt",
+        "cloud"
+      ]
+    }
+  },
+  "outputStyle": {
+    "unitsDefault": "knots",
+    "altUnits": [
+      "km/h",
+      "mph"
+    ],
+    "rideableThresholdsKt": {
+      "beginner": {
+        "min": 12,
+        "max": 18
+      },
+      "intermediate": {
+        "min": 14,
+        "max": 25
+      },
+      "powered": {
+        "min": 20,
+        "max": 35
+      },
+      "notes": "Gust factor often higher than Pigeon\u2014raise beginner mins and emphasize gust spread in briefs."
+    },
+    "forecastBands": {
+      "below18kt": "2kt_steps",
+      "atOrAbove18kt": "4kt_steps"
+    },
+    "language": "en-CA",
+    "voice": "mountain_reservoir_rider_brief",
+    "alwaysShow": [
+      "valley_aligned_background",
+      "channeling_adjusted",
+      "thermal_component",
+      "gust_factor",
+      "confidence",
+      "preferred_end_of_lake",
+      "ridge_vs_valley_note"
+    ]
+  },
+  "forecastLogicSeed": {
+    "steps": [
+      "Fetch multi-model 10 m winds at mid-lake + SW/NE valley proxies",
+      "Fetch ridge-level wind to detect cross-barrier / wave risk",
+      "Classify: along-valley channeling vs cross-valley turbulent vs light thermal candidate",
+      "Apply channeling factor if aligned; add thermal if sun allows",
+      "Pick preferred lake end from along-valley direction",
+      "Inflate gust factor vs prairie defaults",
+      "Emit Forecast Object + caution-heavy rider brief"
+    ],
+    "confidenceHeuristics": {
+      "high": "Models agree on along-valley dir/speed; ridge and valley consistent; clear synoptic driver",
+      "medium": "Speed spread large or thermal-dependent; mild cross component",
+      "low": "Cross-valley upper flow; frontal timing; convection; ice transition; no obs"
+    }
+  },
+  "dataSourcesSuggested": [
+    "Open-Meteo / MSC HRDPS multi-level winds",
+    "ECMWF/ICON for synoptic",
+    "Optional future: local weather station at Windy Point",
+    "Pool level / TransAlta reservoir info for beachability",
+    "AGS or other bathymetry if wave maps desired (reservoir DEM may differ from natural lakes)"
+  ],
+  "calibrationStatus": {
+    "overall": "seed",
+    "enhancerParams": "unvalidated",
+    "directionToLaunchMap": "partial_public_sources",
+    "nextActions": [
+      "Confirm preferred launches with local kiters for 8-point rose",
+      "Deploy temporary logger at Windy Point for 2\u20134 weeks",
+      "Separate summer water vs winter ice seasonal profiles",
+      "Validate channeling factor against model vs logger",
+      "Map fetch roses along long axis for wave advisories"
+    ]
+  },
+  "analogSpots": [
+    {
+      "id": "generic-rockies-valley-reservoir",
+      "name": "Other Rockies front-range reservoirs / long alpine lakes",
+      "why": "Valley channeling + mountain thermal + high gust factor"
+    },
+    {
+      "id": "ca-ab-pigeon-lake",
+      "name": "Pigeon Lake",
+      "why": "Useful contrast only\u2014same province, different physics class"
+    }
+  ],
+  "safetyNotes": [
+    "Very cold water year-round",
+    "High gust factor / loft risk vs prairie lakes",
+    "Remote; limited cell coverage in places",
+    "Weather changes rapidly in the front ranges",
+    "Winter: ice safety, polished ice traction, wind chill\u2014use local guides when unsure",
+    "Reservoir hazards: changing levels, ice hinging near shores/dam"
+  ],
+  "meta": {
+    "createdFor": "portable windsport forecast Spot Profile schema",
+    "basedOn": "Public geography + kiter/tourism wind notes; seed parameters unvalidated",
+    "createdAt": "2026-08-08",
+    "licenceNote": "Profile text original; geographic facts from public sources (Wikipedia/AGS tourism/kite forums)"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-gull-lake",
+  "identity": {
+    "name": "Gull Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Lacombe / Rimbey",
+    "latitude": 52.54072,
+    "longitude": -114.00271,
+    "elevationM": 900,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "foil"
+    ],
+    "waterType": "inland_lake",
+    "summary": "Central Alberta lake with Aspen Beach / Parkland Beach recreation shores. Synoptic wind driven; popular weekend spot."
+  },
+  "geometry": {
+    "shape": "broad_basin",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Multiple summer villages; choose shore for wind direction."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "NW",
+      "W",
+      "SW",
+      "SE",
+      "E"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 52.54072,
+      "longitude": -114.00271,
+      "description": "Central open-water cell"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "aspen-beach",
+      "name": "Aspen Beach / Parkland Beach area",
+      "latitude": 52.52,
+      "longitude": -113.98,
+      "shore": "southeast",
+      "bestWindDirs": [
+        "NW",
+        "N",
+        "W"
+      ],
+      "notes": "Popular public beach corridor; confirm access and rules."
+    }
+  ]
+}

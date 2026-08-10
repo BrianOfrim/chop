@@ -1,0 +1,52 @@
+{
+  "spotId": "ca-ab-sylvan-lake",
+  "ncols": 165,
+  "nrows": 138,
+  "west": -114.25271208404224,
+  "south": 52.308413626545345,
+  "east": -114.06526093773836,
+  "north": 52.40571613500746,
+  "cellSizeM": 75.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32611",
+  "source": {
+    "shoreline": "OpenStreetMap way 142751697 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=18.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "way",
+    "osmId": 142751697
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json"
+  },
+  "stats": {
+    "waterCells": 7576,
+    "depthMinM": 0.5,
+    "depthMaxM": 17.84501075744629,
+    "depthMeanM": 13.184131622314453,
+    "fetchMaxM": 13612.5
+  }
+}

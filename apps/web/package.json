@@ -11,13 +11,16 @@
   },
   "dependencies": {
     "@chop/wave-engine": "*",
+    "geotiff": "^3.0.5",
     "maplibre-gl": "^6.2.0",
+    "proj4": "^2.21.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",
     "@types/node": "^24.13.3",
+    "@types/proj4": "^2.5.6",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",

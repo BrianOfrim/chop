@@ -1,0 +1,52 @@
+{
+  "spotId": "ca-ab-abraham-lake",
+  "ncols": 109,
+  "nrows": 287,
+  "west": -116.48614232868673,
+  "south": 52.077208694569656,
+  "east": -116.32319150008708,
+  "north": 52.336030252097494,
+  "cellSizeM": 100.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32611",
+  "source": {
+    "shoreline": "OpenStreetMap relation 9446148 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=50.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 9446148
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json"
+  },
+  "stats": {
+    "waterCells": 5388,
+    "depthMinM": 0.5,
+    "depthMaxM": 49.706329345703125,
+    "depthMeanM": 32.944183349609375,
+    "fetchMaxM": 11400.0
+  }
+}

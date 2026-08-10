@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Map as MapLibreMap,
-  Marker,
   NavigationControl,
-  Popup,
+  type CanvasSource,
   type MapMouseEvent,
   type GeoJSONSource,
   type StyleSpecification,
@@ -16,8 +15,8 @@ import {
   type LakeGrids,
 } from "@chop/wave-engine";
 import type { SpotProfile } from "../lib/lakeAssets";
-import { hsToImageData, makeArrowIcon, suggestVmax } from "../lib/hsOverlay";
-import type { WindHour } from "../lib/wind";
+import { hsToImageData, makeArrowIcon, HS_COLOR_MAX_M } from "../lib/hsOverlay";
+import { formatWind, formatWindMapLabel, type WindHour } from "../lib/wind";
 
 type Props = {
   grids: LakeGrids;
@@ -29,9 +28,14 @@ type Props = {
 type HoverInfo = {
   lon: number;
   lat: number;
+  x: number;
+  y: number;
   hsM: number | null;
-  depthM: number | null;
+  depthM: number;
   fetchM: number | null;
+  windSpeedMps: number | null;
+  windDirDeg: number | null;
+  gustMps: number | null;
 };
 
 /** Simple raster basemap — more reliable than remote vector styles. */
@@ -75,15 +79,34 @@ function hsCoordinates(meta: LakeGrids["meta"]): [
   ];
 }
 
+function fitLake(map: MapLibreMap, meta: LakeGrids["meta"]) {
+  map.fitBounds(
+    [
+      [meta.west, meta.south],
+      [meta.east, meta.north],
+    ],
+    { padding: { top: 56, bottom: 56, left: 56, right: 96 }, duration: 700, maxZoom: 12.5 },
+  );
+}
+
+/** Place the wind arrow just east of the lake so it does not cover the Hs field. */
+function windArrowLngLat(meta: LakeGrids["meta"]): [number, number] {
+  const midLat = (meta.north + meta.south) / 2;
+  const width = Math.max(meta.east - meta.west, 0.01);
+  return [meta.east + width * 0.16, midLat];
+}
+
 export function MapView({ grids, spot, shoreline, wind }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const markersRef = useRef<Marker[]>([]);
   const hsCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const hsRef = useRef<Float32Array | null>(null);
   const windRef = useRef<WindHour | null>(null);
+  const gridsRef = useRef(grids);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
+
+  gridsRef.current = grids;
 
   const hs = useMemo(() => {
     if (!wind) return null;
@@ -93,7 +116,7 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
   hsRef.current = hs;
   windRef.current = wind;
 
-  const vmax = useMemo(() => (hs ? suggestVmax(hs) : 0.6), [hs]);
+  const vmax = HS_COLOR_MAX_M;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -165,57 +188,124 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
         source: "wind-dir",
         layout: {
           "icon-image": "wind-arrow",
-          "icon-size": 0.85,
+          // Scale ~2× per zoom so the arrow keeps roughly constant ground size
+          "icon-size": [
+            "interpolate",
+            ["exponential", 2],
+            ["zoom"],
+            9,
+            0.21,
+            11,
+            0.85,
+            13,
+            3.4,
+            15,
+            13.6,
+          ],
           "icon-rotate": ["get", "bearing"],
           "icon-rotation-alignment": "map",
+          "icon-pitch-alignment": "map",
           "icon-allow-overlap": true,
           "icon-ignore-placement": true,
+          "text-field": ["get", "label"],
+          "text-size": 12,
+          "text-offset": [0, 1.65],
+          "text-anchor": "top",
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: {
+          "text-color": "#1c201e",
+          "text-halo-color": "rgba(255,255,255,0.92)",
+          "text-halo-width": 1.4,
         },
       });
 
+      fitLake(map, meta);
       setReady(true);
     });
 
     map.on("mousemove", (e: MapMouseEvent) => {
       const { lng, lat } = e.lngLat;
-      const depthM = sampleGrid(grids.depth, grids.meta, lng, lat);
+      const g = gridsRef.current;
+      const depthM = sampleGrid(g.depth, g.meta, lng, lat);
+      if (depthM == null || depthM <= 0) {
+        setHover(null);
+        return;
+      }
       const currentHs = hsRef.current;
       const currentWind = windRef.current;
-      const hsM = currentHs ? sampleGrid(currentHs, grids.meta, lng, lat) : null;
+      const hsM = currentHs ? sampleGrid(currentHs, g.meta, lng, lat) : null;
       let fetchM: number | null = null;
-      if (depthM != null && currentWind) {
-        const { ncols, nrows, west, south, east, north } = grids.meta;
+      if (currentWind) {
+        const { ncols, nrows, west, south, east, north } = g.meta;
         const fx = ((lng - west) / (east - west)) * ncols;
         const fy = ((north - lat) / (north - south)) * nrows;
         const i = Math.min(ncols - 1, Math.max(0, Math.floor(fx)));
         const j = Math.min(nrows - 1, Math.max(0, Math.floor(fy)));
         const idx = j * ncols + i;
-        if (grids.depth[idx]! > 0) {
-          fetchM = fetchAtDir(grids.fetch, grids.meta, idx, currentWind.windDirDeg);
+        if (g.depth[idx]! > 0) {
+          fetchM = fetchAtDir(g.fetch, g.meta, idx, currentWind.windDirDeg);
         }
       }
-      setHover({ lon: lng, lat, hsM, depthM, fetchM });
+      setHover({
+        lon: lng,
+        lat,
+        x: e.point.x,
+        y: e.point.y,
+        hsM,
+        depthM,
+        fetchM,
+        windSpeedMps: currentWind?.windSpeedMps ?? null,
+        windDirDeg: currentWind?.windDirDeg ?? null,
+        gustMps: currentWind?.gustMps ?? null,
+      });
     });
+
+    map.on("mouseout", () => setHover(null));
 
     const onResize = () => map.resize();
     window.addEventListener("resize", onResize);
 
     return () => {
       window.removeEventListener("resize", onResize);
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
       map.remove();
       mapRef.current = null;
       hsCanvasRef.current = null;
+      setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Move shoreline, Hs georef, and camera when the active lake changes
+  useEffect(() => {
+    const map = mapRef.current;
+    const canvas = hsCanvasRef.current;
+    if (!map || !ready || !canvas) return;
+
+    const shoreSrc = map.getSource("shoreline") as GeoJSONSource | undefined;
+    shoreSrc?.setData(shoreline);
+
+    const { meta } = grids;
+    if (canvas.width !== meta.ncols || canvas.height !== meta.nrows) {
+      canvas.width = meta.ncols;
+      canvas.height = meta.nrows;
+    }
+    const hsSrc = map.getSource("hs") as CanvasSource | undefined;
+    hsSrc?.setCoordinates(hsCoordinates(meta));
+
+    fitLake(map, meta);
+  }, [grids, shoreline, ready]);
 
   useEffect(() => {
     const canvas = hsCanvasRef.current;
     if (!ready || !hs || !canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    if (canvas.width !== grids.meta.ncols || canvas.height !== grids.meta.nrows) {
+      canvas.width = grids.meta.ncols;
+      canvas.height = grids.meta.nrows;
+    }
     ctx.putImageData(hsToImageData(hs, grids.meta, vmax), 0, 0);
   }, [hs, ready, grids.meta, vmax]);
 
@@ -228,38 +318,25 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
       src.setData({ type: "FeatureCollection", features: [] });
       return;
     }
-    // Single mid-lake arrow; points where the wind is going (TO)
+    // Arrow offset east of the lake; points where the wind is going (TO)
     const toBearing = (wind.windDirDeg + 180) % 360;
     src.setData({
       type: "FeatureCollection",
       features: [
         {
           type: "Feature",
-          properties: { bearing: toBearing },
+          properties: {
+            bearing: toBearing,
+            label: formatWindMapLabel(wind.windSpeedMps, wind.gustMps),
+          },
           geometry: {
             type: "Point",
-            coordinates: [spot.identity.longitude, spot.identity.latitude],
+            coordinates: windArrowLngLat(grids.meta),
           },
         },
       ],
     });
-  }, [wind, ready, spot]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = (spot.ridePoints ?? []).map((rp) => {
-      const el = document.createElement("div");
-      el.className = "ride-marker";
-      el.title = rp.name;
-      el.textContent = "•";
-      return new Marker({ element: el })
-        .setLngLat([rp.longitude, rp.latitude])
-        .setPopup(new Popup({ offset: 8 }).setText(rp.name))
-        .addTo(map);
-    });
-  }, [spot, ready]);
+  }, [wind, ready, grids.meta]);
 
   return (
     <div className="map-wrap">
@@ -273,18 +350,33 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
         </div>
         <p className="legend-note">SMB fetch-limited + depth cap. Wind: HRDPS.</p>
       </div>
-      {hover?.depthM != null && (
-        <div className="hover-card">
-          <div>
-            {hover.lat.toFixed(4)}, {hover.lon.toFixed(4)}
-          </div>
-          <div>Depth {hover.depthM.toFixed(1)} m</div>
-          {hover.fetchM != null && <div>Fetch {(hover.fetchM / 1000).toFixed(1)} km</div>}
-          <div>
-            Hs{" "}
+      {hover && (
+        <div
+          className="hover-card"
+          style={{
+            left: Math.min(hover.x + 14, (containerRef.current?.clientWidth ?? 320) - 180),
+            top: Math.max(8, hover.y - 8),
+          }}
+        >
+          <div className="hover-primary">
+            Wave{" "}
             {hover.hsM != null && Number.isFinite(hover.hsM)
               ? `${(hover.hsM * 100).toFixed(0)} cm`
               : "—"}
+          </div>
+          <div className="hover-primary">
+            Wind{" "}
+            {hover.windSpeedMps != null && hover.windDirDeg != null
+              ? formatWind(
+                  hover.windSpeedMps,
+                  hover.windDirDeg,
+                  hover.gustMps,
+                )
+              : "—"}
+          </div>
+          <div className="hover-meta">
+            Depth {hover.depthM.toFixed(1)} m
+            {hover.fetchM != null ? ` · Fetch ${(hover.fetchM / 1000).toFixed(1)} km` : ""}
           </div>
         </div>
       )}

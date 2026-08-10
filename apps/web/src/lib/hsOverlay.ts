@@ -1,7 +1,10 @@
 import type { GridMeta } from "@chop/wave-engine";
 
+/** Fixed Hs color scale max (m). Values above clip to the top stop. */
+export const HS_COLOR_MAX_M = 1;
+
 /** Color scale for Hs in meters → [r,g,b,a]. */
-export function hsColor(hsM: number, vmax: number): [number, number, number, number] {
+export function hsColor(hsM: number, vmax: number = HS_COLOR_MAX_M): [number, number, number, number] {
   if (!Number.isFinite(hsM) || hsM < 0) return [0, 0, 0, 0];
   const t = Math.max(0, Math.min(1, hsM / Math.max(vmax, 0.01)));
   // Amber/teal chop scale — high opacity so it reads on top of basemap water
@@ -30,7 +33,7 @@ export function hsColor(hsM: number, vmax: number): [number, number, number, num
 export function hsToImageData(
   hs: Float32Array,
   meta: GridMeta,
-  vmax: number,
+  vmax: number = HS_COLOR_MAX_M,
 ): ImageData {
   const { ncols, nrows } = meta;
   const img = new ImageData(ncols, nrows);
@@ -44,17 +47,6 @@ export function hsToImageData(
     px[o + 3] = a;
   }
   return img;
-}
-
-export function suggestVmax(hs: Float32Array): number {
-  let max = 0;
-  for (let i = 0; i < hs.length; i++) {
-    const v = hs[i]!;
-    if (Number.isFinite(v) && v > max) max = v;
-  }
-  if (max < 0.05) return 0.1;
-  if (max < 0.15) return 0.2;
-  return Math.ceil((max * 100) / 5) * 5 / 100;
 }
 
 /** Draw a simple north-pointing arrow for map.addImage. */

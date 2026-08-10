@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapView } from "./components/MapView";
+import { WindChart } from "./components/WindChart";
 import {
   loadLakeGrids,
   loadLakeIndex,
@@ -7,6 +8,11 @@ import {
   type SpotProfile,
 } from "./lib/lakeAssets";
 import { fetchHrdpsWind, formatWind, type WindForecast } from "./lib/wind";
+import {
+  fetchLakeSurfaceTemp,
+  formatWaterTemp,
+  type LakeSurfaceTemp,
+} from "./lib/lswt";
 import type { LakeGrids } from "@chop/wave-engine";
 import "./App.css";
 
@@ -19,6 +25,10 @@ export default function App() {
     null,
   );
   const [forecast, setForecast] = useState<WindForecast | null>(null);
+  const [waterTemp, setWaterTemp] = useState<LakeSurfaceTemp | null>(null);
+  const [waterTempStatus, setWaterTempStatus] = useState<
+    "idle" | "loading" | "ready" | "unavailable"
+  >("idle");
   const [hourIndex, setHourIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,6 +47,11 @@ export default function App() {
     setLoading(true);
     setError(null);
     setForecast(null);
+    setWaterTemp(null);
+    setWaterTempStatus("idle");
+    setGrids(null);
+    setSpot(null);
+    setShoreline(null);
     (async () => {
       try {
         const loaded = await loadLakeGrids(entry.path);
@@ -47,10 +62,33 @@ export default function App() {
         setLoading(false);
 
         const proxy =
-          loaded.spot.proxyPoints.find((p) => p.role === "background_model_point") ??
-          loaded.spot.proxyPoints[0];
+          loaded.spot.proxyPoints.find(
+            (p) =>
+              p.role === "background_model_point" ||
+              p.role === "open_water_model_point",
+          ) ?? loaded.spot.proxyPoints[0];
         const lat = proxy?.latitude ?? loaded.spot.identity.latitude;
         const lon = proxy?.longitude ?? loaded.spot.identity.longitude;
+
+        setWaterTempStatus("loading");
+        fetchLakeSurfaceTemp(lat, lon)
+          .then((temp) => {
+            if (cancelled) return;
+            if (temp) {
+              setWaterTemp(temp);
+              setWaterTempStatus("ready");
+            } else {
+              setWaterTemp(null);
+              setWaterTempStatus("unavailable");
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setWaterTemp(null);
+              setWaterTempStatus("unavailable");
+            }
+          });
+
         try {
           const wind = await fetchHrdpsWind(lat, lon);
           if (cancelled) return;
@@ -124,12 +162,14 @@ export default function App() {
         {loading && <div className="banner">Loading lake & HRDPS wind…</div>}
         {grids && spot && shoreline && (
           <MapView
+            key={lakeId}
             grids={grids}
             spot={spot}
             shoreline={shoreline}
             wind={wind}
           />
         )}
+
       </main>
 
       <footer className="bottombar">
@@ -137,21 +177,48 @@ export default function App() {
           <strong>{spot?.identity.name ?? "—"}</strong>
           {wind && (
             <>
-              <span>{formatWind(wind.windSpeedMps, wind.windDirDeg)}</span>
+              <span>
+                {formatWind(wind.windSpeedMps, wind.windDirDeg, wind.gustMps)}
+              </span>
               <span className="muted">{timeLabel}</span>
               <span className="muted">model {forecast?.model}</span>
             </>
           )}
+          {waterTempStatus === "loading" && (
+            <span className="muted">water temp…</span>
+          )}
+          {waterTempStatus === "ready" && waterTemp && (
+            <span title={waterTemp.note}>
+              Water {formatWaterTemp(waterTemp.tempC)}
+              <span className="muted">
+                {" "}
+                MODIS {waterTemp.product === "LST_Night_1km" ? "night" : "day"}{" "}
+                {waterTemp.date}
+              </span>
+            </span>
+          )}
+          {waterTempStatus === "unavailable" && (
+            <span className="muted" title="No clear-sky MODIS LST in the last ~3 weeks">
+              Water temp unavailable
+            </span>
+          )}
         </div>
         {forecast && forecast.hours.length > 0 && (
-          <div className="scrubber">
-            <input
-              type="range"
-              min={0}
-              max={forecast.hours.length - 1}
-              value={hourIndex}
-              onChange={(e) => setHourIndex(Number(e.target.value))}
+          <div className="forecast-panel">
+            <WindChart
+              hours={forecast.hours}
+              hourIndex={hourIndex}
+              onSelectHour={setHourIndex}
             />
+            <div className="scrubber">
+              <input
+                type="range"
+                min={0}
+                max={forecast.hours.length - 1}
+                value={hourIndex}
+                onChange={(e) => setHourIndex(Number(e.target.value))}
+              />
+            </div>
           </div>
         )}
       </footer>

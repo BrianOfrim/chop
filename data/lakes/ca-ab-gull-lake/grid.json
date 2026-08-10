@@ -1,0 +1,52 @@
+{
+  "spotId": "ca-ab-gull-lake",
+  "ncols": 140,
+  "nrows": 246,
+  "west": -114.08565687836595,
+  "south": 52.455943280813216,
+  "east": -113.91975646048199,
+  "north": 52.62550178968971,
+  "cellSizeM": 75.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32611",
+  "source": {
+    "shoreline": "OpenStreetMap relation 1927760 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=18.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 1927760
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json"
+  },
+  "stats": {
+    "waterCells": 14245,
+    "depthMinM": 0.5,
+    "depthMaxM": 17.982009887695312,
+    "depthMeanM": 14.30916976928711,
+    "fetchMaxM": 18862.5
+  }
+}
