@@ -1,0 +1,73 @@
+# chop
+
+Inland lake **wave height** map (with wind as a secondary overlay), starting with **Pigeon Lake**, Alberta.
+
+Wave height is the hero layer: significant wave height (`Hs`) from a fetch-limited SMB model + depth cap, driven by Environment Canada **HRDPS** wind via Open-Meteo. Wind arrows and a mid-lake readout sit on top.
+
+## Quick start
+
+```bash
+cd ~/Projects/chop
+npm install
+npm run dev
+```
+
+Open the URL Vite prints (usually http://localhost:5173).
+
+## Workspace layout
+
+| Path | Role |
+|------|------|
+| `apps/web/` | MapLibre + React UI |
+| `packages/wave-engine/` | SMB `Hs` + depth-cap (TypeScript) |
+| `data/lakes/{spotId}/` | Per-lake shoreline, depth, fetch grids, spot profile |
+| `scripts/build-lake-assets.py` | Build web assets from GIS (AGS DEM + shoreline) |
+
+## Rebuild Pigeon Lake assets
+
+Needs Python deps (geopandas, numpy, pyproj). From the repo root:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r scripts/requirements.txt
+.venv/bin/python scripts/build-lake-assets.py \
+  --gis ~/Downloads/windsport-spots/pigeon-lake/gis \
+  --spot data/lakes/ca-ab-pigeon-lake/spot-profile.json \
+  --out data/lakes/ca-ab-pigeon-lake \
+  --water-surface 847.6
+```
+
+Source bathymetry/shoreline: **AGS DIG 2008-0490** and **DIG 2008-0828** under the [Open Government Licence – Alberta](https://open.alberta.ca/licence).
+
+## How waves are computed
+
+1. Precompute water depth and **16-direction fetch** on a ~50 m grid.
+2. At runtime, take HRDPS 10 m wind speed & meteorological FROM direction.
+3. For each water cell: `Hs = SMB(U, fetch)` then `Hs = min(Hs, 0.4 × depth)`.
+
+This is a shallow-lake engineering estimate, not WW3. Good for relative “where’s the chop?” maps.
+
+## Add another lake
+
+1. Create `data/lakes/{spotId}/` with a `spot-profile.json` (see Pigeon’s).
+2. Produce shoreline polygon + depth grid (DEM or synthetic).
+3. Extend or fork `scripts/build-lake-assets.py` for that lake’s CRS/inputs.
+4. Register the lake in [`data/lakes/index.json`](data/lakes/index.json) with `"enabled": true`.
+5. Reload the app — the lake picker reads the index.
+
+Abraham Lake can follow the same contract (OSM shoreline + depth model).
+
+## Scripts
+
+```bash
+npm run dev          # web UI
+npm run test         # wave-engine unit tests
+npm run build        # production web build
+```
+
+## Licence notes
+
+- App code: yours (add a licence when you care).
+- Pigeon GIS products: Open Government Licence – Alberta (see `data/lakes/ca-ab-pigeon-lake/README.md`).
+- Basemap: OpenFreeMap / OpenStreetMap contributors.
+- Wind: Open-Meteo (GEM HRDPS).

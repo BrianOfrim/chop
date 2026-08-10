@@ -1,0 +1,197 @@
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.topbar,
+.bottombar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  z-index: 2;
+}
+
+.bottombar {
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  min-width: 7rem;
+}
+
+.brand-mark {
+  font-family: "Fraunces", "Palatino Linotype", Georgia, serif;
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.brand-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+
+.lake-picker,
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.lake-picker select {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  color: var(--ink);
+}
+
+.date-badge {
+  margin-left: auto;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: rgba(31, 111, 120, 0.12);
+  border: 1px solid rgba(31, 111, 120, 0.25);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+}
+
+.main {
+  position: relative;
+  min-height: 0;
+}
+
+.map-wrap,
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+.banner {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+.banner.error {
+  color: #7a2e2e;
+  border-color: #d7a0a0;
+}
+
+.legend {
+  position: absolute;
+  left: 0.85rem;
+  bottom: 0.85rem;
+  z-index: 2;
+  width: 11rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(20, 40, 30, 0.08);
+}
+
+.legend-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.legend-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgb(8, 70, 92),
+    rgb(18, 130, 140),
+    rgb(70, 175, 150),
+    rgb(220, 180, 70),
+    rgb(255, 245, 210)
+  );
+}
+
+.legend-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.legend-note {
+  margin: 0.45rem 0 0;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.hover-card {
+  position: absolute;
+  top: 0.85rem;
+  left: 0.85rem;
+  z-index: 2;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+  flex: 1;
+}
+
+.readout .muted {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.scrubber {
+  flex: 1 1 220px;
+  max-width: 520px;
+}
+
+.scrubber input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.ride-marker {
+  width: 14px;
+  height: 14px;
+  color: #9a3412;
+  font-size: 18px;
+  line-height: 14px;
+  text-shadow: 0 0 2px #fff;
+  cursor: pointer;
+}
+
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}

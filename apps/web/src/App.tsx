@@ -1,0 +1,165 @@
+import { useEffect, useMemo, useState } from "react";
+import { MapView } from "./components/MapView";
+import {
+  loadLakeGrids,
+  loadLakeIndex,
+  type LakeIndexEntry,
+  type SpotProfile,
+} from "./lib/lakeAssets";
+import {
+  fetchHrdpsWindForDate,
+  formatWind,
+  strongestWindHourIndex,
+  type WindForecast,
+} from "./lib/wind";
+import type { LakeGrids } from "@chop/wave-engine";
+import "./App.css";
+
+/** Historical day to load (HRDPS via Open-Meteo). */
+const DISPLAY_DATE = "2026-08-02";
+
+export default function App() {
+  const [lakes, setLakes] = useState<LakeIndexEntry[]>([]);
+  const [lakeId, setLakeId] = useState("ca-ab-pigeon-lake");
+  const [grids, setGrids] = useState<LakeGrids | null>(null);
+  const [spot, setSpot] = useState<SpotProfile | null>(null);
+  const [shoreline, setShoreline] = useState<GeoJSON.FeatureCollection | null>(
+    null,
+  );
+  const [forecast, setForecast] = useState<WindForecast | null>(null);
+  const [hourIndex, setHourIndex] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadLakeIndex()
+      .then((list) => setLakes(list.filter((l) => l.enabled)))
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  // Decouple asset load from wind so the map shows even if HRDPS is slow/fails
+  useEffect(() => {
+    const entry = lakes.find((l) => l.id === lakeId);
+    if (!entry) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setForecast(null);
+    (async () => {
+      try {
+        const loaded = await loadLakeGrids(entry.path);
+        if (cancelled) return;
+        setGrids(loaded.grids);
+        setSpot(loaded.spot);
+        setShoreline(loaded.shoreline);
+        setLoading(false);
+
+        const proxy =
+          loaded.spot.proxyPoints.find((p) => p.role === "background_model_point") ??
+          loaded.spot.proxyPoints[0];
+        const lat = proxy?.latitude ?? loaded.spot.identity.latitude;
+        const lon = proxy?.longitude ?? loaded.spot.identity.longitude;
+        try {
+          const wind = await fetchHrdpsWindForDate(lat, lon, DISPLAY_DATE);
+          if (cancelled) return;
+          setForecast(wind);
+          setHourIndex(strongestWindHourIndex(wind.hours));
+        } catch (windErr) {
+          if (!cancelled) {
+            setError(`Wind data unavailable: ${String(windErr)}`);
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(String(e));
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lakeId, lakes]);
+
+  const wind = forecast?.hours[hourIndex] ?? null;
+
+  const timeLabel = useMemo(() => {
+    if (!wind) return "";
+    return new Date(wind.time).toLocaleString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }, [wind]);
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">chop</span>
+          <span className="brand-sub">inland lake waves</span>
+        </div>
+        <label className="lake-picker">
+          Lake
+          <select
+            value={lakeId}
+            onChange={(e) => setLakeId(e.target.value)}
+            disabled={lakes.length === 0}
+          >
+            {lakes.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="date-badge" title="Historical HRDPS day">
+          {DISPLAY_DATE}
+        </span>
+      </header>
+
+      <main className="main">
+        {error && <div className="banner error">{error}</div>}
+        {loading && (
+          <div className="banner">Loading lake & HRDPS for {DISPLAY_DATE}…</div>
+        )}
+        {grids && spot && shoreline && (
+          <MapView
+            grids={grids}
+            spot={spot}
+            shoreline={shoreline}
+            wind={wind}
+          />
+        )}
+      </main>
+
+      <footer className="bottombar">
+        <div className="readout">
+          <strong>{spot?.identity.name ?? "—"}</strong>
+          {wind && (
+            <>
+              <span>{formatWind(wind.windSpeedMps, wind.windDirDeg)}</span>
+              <span className="muted">{timeLabel}</span>
+              <span className="muted">
+                HRDPS · {forecast?.date ?? DISPLAY_DATE}
+              </span>
+            </>
+          )}
+        </div>
+        {forecast && forecast.hours.length > 0 && (
+          <div className="scrubber">
+            <input
+              type="range"
+              min={0}
+              max={forecast.hours.length - 1}
+              value={hourIndex}
+              onChange={(e) => setHourIndex(Number(e.target.value))}
+            />
+          </div>
+        )}
+      </footer>
+    </div>
+  );
+}

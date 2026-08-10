@@ -1,0 +1,311 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-pigeon-lake",
+  "identity": {
+    "name": "Pigeon Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Edmonton",
+    "latitude": 53.03028,
+    "longitude": -114.06333,
+    "elevationM": 852,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "snowkite"
+    ],
+    "waterType": "inland_lake",
+    "summary": "Large shallow prairie/parkland lake. Rideable days are driven mainly by synoptic/frontal wind; lake breeze is a modest secondary enhancer. No gap/venturi."
+  },
+  "geometry": {
+    "surfaceAreaKm2": 96.7,
+    "maxLengthKm": 13.1,
+    "maxWidthKm": 14.7,
+    "meanDepthM": 6.2,
+    "maxDepthM": 9.1,
+    "shorelineKm": 46,
+    "shape": "broad_oval_open_basin",
+    "surroundingTerrain": "level_to_gently_rolling_parkland_forest",
+    "notes": "Enough fetch for organized open-water wind and chop; shoreline trees/cottages create nearshore junk wind and local shadows."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "NW",
+      "W",
+      "SW",
+      "N",
+      "NE",
+      "SE",
+      "S"
+    ],
+    "directionNotes": "Usable from most directions if you pick the matching shore. NW/W common on post-frontal/synoptic days; S/SE/SW also used (esp. snowkite launches). Beach selection matters more than a single 'best direction'.",
+    "seasonality": {
+      "spring": "Often best for synoptic gradients; cold water; shoulder season windiest useful period with fall.",
+      "summer": "More light days; lake breeze relatively more important; convective gusts/storm outflows possible.",
+      "fall": "Strong synoptic setups return; cooling lake can sharpen thermal contrast on sunny days.",
+      "winter": "Snowkite on ice when safe; open-water sports iced out. Strong winds still occur over ice."
+    }
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 53.03,
+      "longitude": -114.06,
+      "description": "Central open-water cell approximating mid-lake wind without shoreline roughness."
+    },
+    {
+      "id": "upstream_nw",
+      "role": "upstream_synoptic_proxy",
+      "latitude": 53.12,
+      "longitude": -114.25,
+      "description": "NW of lake over land/parkland\u2014useful when flow is NW to check regional background before lake modification."
+    },
+    {
+      "id": "upstream_sw",
+      "role": "upstream_synoptic_proxy",
+      "latitude": 52.92,
+      "longitude": -114.25,
+      "description": "SW approach proxy for SW/W synoptic and diluted chinook-influenced regimes."
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "ma-me-o-beach",
+      "name": "Ma-Me-O Beach",
+      "latitude": 52.98,
+      "longitude": -114.02,
+      "shore": "southeast",
+      "bestWindDirs": [
+        "N",
+        "NE",
+        "NW"
+      ],
+      "notes": "Popular SE-shore public beach/day-use area. Best with northerly component and fetch across the lake. Confirm local access/rules."
+    },
+    {
+      "id": "pigeon-lake-pp-east",
+      "name": "Pigeon Lake Provincial Park (east side area)",
+      "latitude": 53.0,
+      "longitude": -113.97,
+      "shore": "east",
+      "bestWindDirs": [
+        "W",
+        "SW",
+        "NW"
+      ],
+      "notes": "Park access/parking; prefer westerlies with open fetch. Exact launch depends on facilities and regulations."
+    },
+    {
+      "id": "north-shore-generic",
+      "name": "North shore launches (generic)",
+      "latitude": 53.08,
+      "longitude": -114.07,
+      "shore": "north",
+      "bestWindDirs": [
+        "S",
+        "SE",
+        "SW"
+      ],
+      "notes": "Used when wind is from the south sector (including some snowkite ops). Multiple private/cottage accesses\u2014treat as directional class, not a single pin."
+    }
+  ],
+  "enhancerModel": {
+    "type": "lake_breeze_thermal",
+    "enabled": true,
+    "status": "seed_uncalibrated",
+    "description": "On sunny days with weak\u2013moderate synoptic wind, expect a modest afternoon lake-breeze boost and more onshore component at heated shores. Do NOT use La Ventana +8 mph constants.",
+    "rulesSeed": {
+      "minBackgroundKt": 4,
+      "maxBackgroundForFullThermalKt": 12,
+      "sunnyAddOnKt": 2,
+      "partlyCloudyAddOnKt": 1,
+      "overcastAddOnKt": 0,
+      "superThermalAddOnKt": null,
+      "notes": "Seed guesses only. Calibrate against buoy + rider reports. Likely much weaker than coastal desert thermals."
+    },
+    "triggerLogic": "If afternoon solar is high AND synoptic background is light-moderate, add small onshore-biased boost at sun-exposed shores. If synoptic already strong (>~15\u201318 kt), thermal add-on is secondary; prefer raw background + gust factor.",
+    "diurnal": {
+      "peakWindowLocal": "13:00-17:00",
+      "eveningDieOff": "common_for_thermal_component",
+      "overnight": "synoptic_only_or_land_breeze"
+    }
+  },
+  "cloudSensitivity": {
+    "level": "moderate",
+    "notes": "Cloud mainly affects the weak lake-breeze component. Strong frontal days can still blow under overcast. Thunderstorm outflow days are hazardous exceptions."
+  },
+  "failureModes": [
+    {
+      "id": "lee_shore_trees",
+      "severity": "high",
+      "description": "Launching in the lee of forested shoreline or in tight bays \u2192 light, holey, directionally messy wind while mid-lake is better."
+    },
+    {
+      "id": "wrong_beach_for_direction",
+      "severity": "high",
+      "description": "Lake is multidirectional; bad shore choice kills the session even when regional wind is good."
+    },
+    {
+      "id": "light_summer_high",
+      "severity": "high",
+      "description": "Quiet summer ridging with little pressure gradient \u2192 unrideable despite sunshine; lake breeze alone often insufficient for kiters needing 12+ kt."
+    },
+    {
+      "id": "convective_outflow",
+      "severity": "medium",
+      "description": "Thunderstorm gust fronts: short violent spikes, rapid lulls, dangerous for beginners."
+    },
+    {
+      "id": "gust_factor_postfrontal",
+      "severity": "medium",
+      "description": "Cold unstable NW flow can be very gusty\u2014usable but harder for learners."
+    },
+    {
+      "id": "nearshore_cottage_roughness",
+      "severity": "medium",
+      "description": "Buildings/docks/trees create junk wind at the beach even when buoy shows clean mid-lake flow."
+    },
+    {
+      "id": "ice_shoulder",
+      "severity": "seasonal",
+      "description": "Freeze-up / breakup: changing surface, access, and verification; snowkite ice safety critical."
+    },
+    {
+      "id": "diluted_chinook_west",
+      "severity": "low",
+      "description": "Occasional warmer W/SW regimes with mountain-lee influence aloft; usually not a true chinook jet at this latitude/distance, but can change temp, stability, and gustiness."
+    }
+  ],
+  "verification": {
+    "stations": [
+      {
+        "id": "plwa-central-buoy",
+        "name": "Pigeon Lake Watershed Association central basin buoy",
+        "url": "https://wqdatalive.com/public/1495",
+        "variables": [
+          "wind_speed",
+          "wind_direction",
+          "air_temp",
+          "pressure"
+        ],
+        "cadence": "15min_open_water_season",
+        "notes": "Best on-lake truth for open-water season. Represents open-water zone, not beach roughness."
+      }
+    ],
+    "nearbyReferences": [
+      {
+        "id": "edmonton_area_metars",
+        "description": "Edmonton-area airport METARs for synoptic pattern cross-check (not lake-specific)."
+      }
+    ],
+    "riderReports": {
+      "suggestedPrompt": "Was it rideable 1\u20135pm at your beach? Avg wind feel? Gusty? Which shore?",
+      "fields": [
+        "date",
+        "beachId",
+        "rideable",
+        "estimatedKt",
+        "gusty",
+        "directionFelt"
+      ]
+    }
+  },
+  "outputStyle": {
+    "unitsDefault": "knots",
+    "altUnits": [
+      "km/h",
+      "mph"
+    ],
+    "rideableThresholdsKt": {
+      "beginner": {
+        "min": 10,
+        "max": 16
+      },
+      "intermediate": {
+        "min": 12,
+        "max": 22
+      },
+      "powered": {
+        "min": 18,
+        "max": 30
+      },
+      "notes": "Seed thresholds for large light-wind kiters common on AB lakes (often 14\u201316m). Tune with local gear norms."
+    },
+    "forecastBands": {
+      "below18kt": "2kt_steps",
+      "atOrAbove18kt": "4kt_steps",
+      "inspiredBy": "MasViento range convention adapted to knots"
+    },
+    "language": "en-CA",
+    "voice": "prairie_lake_rider_brief",
+    "alwaysShow": [
+      "synoptic_background",
+      "spot_adjusted",
+      "confidence",
+      "best_shores_today",
+      "gust_factor"
+    ]
+  },
+  "forecastLogicSeed": {
+    "steps": [
+      "Fetch multi-model wind at open_lake_center and upstream proxies",
+      "Classify regime: frontal/synoptic vs light-thermal candidate",
+      "Estimate cloud/solar for lake-breeze eligibility",
+      "Apply small thermal add-on only if eligible; else use background",
+      "Map direction to recommended shores / warn lee launches",
+      "Score confidence from model agreement + buoy availability",
+      "Emit Forecast Object then rider brief"
+    ],
+    "confidenceHeuristics": {
+      "high": "Models agree within ~3 kt and direction sector; buoy trend matches; clear synoptic driver",
+      "medium": "Models agree on direction but speed spread >3\u20135 kt; or thermal day with uncertain sun",
+      "low": "Light/variable; pre-frontal wind shift timing; convection possible; ice transition"
+    }
+  },
+  "dataSourcesSuggested": [
+    "Open-Meteo multi-model (ECMWF, ICON, GFS, Canadian models if available)",
+    "PLWA buoy wind (verification)",
+    "Environment Canada / regional warnings for severe convection",
+    "Optional: webcam or parking activity as weak proxy later"
+  ],
+  "calibrationStatus": {
+    "overall": "seed",
+    "enhancerParams": "unvalidated",
+    "directionToBeachMap": "partial_local_knowledge",
+    "nextActions": [
+      "Log 20\u201340 sessions against buoy + beach reports",
+      "Fit sunnyAddOnKt by month (May\u2013Sep)",
+      "Confirm preferred launches per 8-point wind rose with locals",
+      "Separate open-water vs snowkite seasonal profiles if needed"
+    ]
+  },
+  "analogSpots": [
+    {
+      "id": "ca-ab-wabamun",
+      "name": "Wabamun Lake",
+      "why": "Nearby AB lake, similar synoptic driver; different shoreline hazards (power plant/ice)."
+    },
+    {
+      "id": "generic-prairie-lake",
+      "name": "Other central Alberta recreational lakes",
+      "why": "Same regime class: synoptic primary, weak lake breeze, fetch/shore selection critical."
+    }
+  ],
+  "safetyNotes": [
+    "Shallow areas and recreational boat traffic in summer",
+    "Cold water most of season\u2014exposure risk",
+    "Thunderstorm season: do not treat outflow as a planned window",
+    "Snowkite: ice thickness/safety is rider responsibility; never trust forecasts for ice"
+  ],
+  "meta": {
+    "createdFor": "portable windsport forecast Spot Profile schema",
+    "basedOn": "Geography + regime analysis; local launch notes from public tourism/snowkite sources; not a substitute for local rider intel",
+    "createdAt": "2026-08-07"
+  }
+}

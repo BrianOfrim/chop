@@ -1,0 +1,11 @@
+{
+  "lakes": [
+    {
+      "id": "ca-ab-pigeon-lake",
+      "name": "Pigeon Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-pigeon-lake"
+    }
+  ]
+}
