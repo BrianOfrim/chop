@@ -17,12 +17,18 @@ import {
 import type { SpotProfile } from "../lib/lakeAssets";
 import { hsToImageData, makeArrowIcon, HS_COLOR_MAX_M } from "../lib/hsOverlay";
 import { formatWind, formatWindMapLabel, type WindHour } from "../lib/wind";
+import {
+  formatWaveHeight,
+  type UnitPrefs,
+} from "../lib/units";
+import { DEFAULT_WAVE_SCALE, scaleGradientCss } from "../lib/colorScales";
 
 type Props = {
   grids: LakeGrids;
   spot: SpotProfile;
   shoreline: GeoJSON.FeatureCollection;
   wind: WindHour | null;
+  units: UnitPrefs;
 };
 
 type HoverInfo = {
@@ -303,7 +309,7 @@ function fetchRayGeoJSON(
   };
 }
 
-export function MapView({ grids, spot, shoreline, wind }: Props) {
+export function MapView({ grids, spot, shoreline, wind, units }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const hsCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -574,7 +580,7 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
       canvas.width = grids.meta.ncols;
       canvas.height = grids.meta.nrows;
     }
-    ctx.putImageData(hsToImageData(hs, grids.meta, vmax), 0, 0);
+    ctx.putImageData(hsToImageData(hs, grids.meta, vmax, DEFAULT_WAVE_SCALE), 0, 0);
   }, [hs, ready, grids.meta, vmax]);
 
   useEffect(() => {
@@ -595,7 +601,7 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
           type: "Feature",
           properties: {
             bearing: toBearing,
-            label: formatWindMapLabel(wind.windSpeedMps, wind.gustMps),
+            label: formatWindMapLabel(wind.windSpeedMps, wind.gustMps, units.wind),
           },
           geometry: {
             type: "Point",
@@ -604,17 +610,20 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
         },
       ],
     });
-  }, [wind, ready, grids.meta]);
+  }, [wind, ready, grids.meta, units.wind]);
 
   return (
     <div className="map-wrap">
       <div ref={containerRef} className="map" />
       <div className="legend">
         <div className="legend-title">Wave height Hs</div>
-        <div className="legend-bar" />
+        <div
+          className="legend-bar"
+          style={{ background: scaleGradientCss(DEFAULT_WAVE_SCALE) }}
+        />
         <div className="legend-scale">
           <span>0</span>
-          <span>{(vmax * 100).toFixed(0)} cm</span>
+          <span>{formatWaveHeight(vmax, units.wave)}</span>
         </div>
         <p className="legend-note">SMB fetch-limited + depth cap. Wind: HRDPS.</p>
       </div>
@@ -629,7 +638,7 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
           <div className="hover-primary">
             Wave{" "}
             {hover.hsM != null && Number.isFinite(hover.hsM)
-              ? `${(hover.hsM * 100).toFixed(0)} cm`
+              ? formatWaveHeight(hover.hsM, units.wave)
               : "—"}
           </div>
           <div className="hover-primary">
@@ -639,6 +648,7 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
                   hover.windSpeedMps,
                   hover.windDirDeg,
                   hover.gustMps,
+                  units.wind,
                 )
               : "—"}
           </div>

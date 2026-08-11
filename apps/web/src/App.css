@@ -60,6 +60,31 @@
   color: var(--ink);
 }
 
+.unit-prefs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-left: auto;
+}
+
+.unit-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.unit-picker select {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
 .main {
   position: relative;
   min-height: 0;
@@ -185,8 +210,8 @@
 }
 
 .forecast-panel {
-  flex: 1 1 280px;
-  max-width: 560px;
+  flex: 1 1 420px;
+  max-width: 900px;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -200,11 +225,11 @@
 .wind-chart-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-end;
   gap: 0.75rem;
   font-size: 0.72rem;
   color: var(--muted);
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.15rem;
 }
 
 .wind-chart-title {
@@ -212,10 +237,115 @@
   color: var(--ink);
 }
 
+.wind-chart-hs-readout {
+  font-weight: 500;
+  color: #0f6b5c;
+}
+
+.wind-chart-legend .swatch.hs-line {
+  width: 12px;
+  height: 0;
+  border-top: 2px solid #0f6b5c;
+  background: none;
+  border-radius: 0;
+}
+
+.wind-chart-legend .swatch.hs-bar {
+  width: 8px;
+  height: 10px;
+  background: #1a8f7a;
+  border-radius: 1px;
+}
+
+.wind-chart-legend .swatch.hs-scale {
+  width: 28px;
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgb(8, 70, 92),
+    rgb(18, 130, 140),
+    rgb(70, 175, 150),
+    rgb(220, 180, 70),
+    rgb(255, 245, 210)
+  );
+}
+
+.wave-chart {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
+.wave-chart-area {
+  fill: rgba(15, 107, 92, 0.12);
+}
+
+.wave-chart-bar {
+  stroke: none;
+}
+
+.wave-chart-bar.selected {
+  stroke: rgba(28, 36, 32, 0.55);
+  stroke-width: 1;
+}
+
+.wind-chart-hs-line {
+  fill: none;
+  stroke: #0f6b5c;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.wind-chart-hs-dot {
+  fill: #0f6b5c;
+  stroke: #fff;
+  stroke-width: 1.2;
+}
+
+.wind-chart-tick.hs {
+  fill: #0f6b5c;
+}
+
+.wind-chart-axis-label {
+  fill: var(--muted);
+  font-size: 8px;
+}
+
+.wind-chart-axis-label.hs {
+  fill: #0f6b5c;
+}
+
 .wind-chart-legend {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.color-scale-legend {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 7.5rem;
+  max-width: 9.5rem;
+}
+
+.color-scale-bar {
+  display: block;
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(28, 36, 32, 0.12);
+}
+
+.color-scale-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .wind-chart-legend .swatch {
@@ -244,11 +374,50 @@
   border-radius: 1px;
 }
 
+.wind-chart-legend .swatch.wind-scale {
+  width: 28px;
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgb(55, 70, 90),
+    rgb(70, 120, 170),
+    rgb(90, 165, 150),
+    rgb(220, 170, 60),
+    rgb(210, 90, 70)
+  );
+}
+
 .wind-chart-legend .swatch.gust-cap {
   width: 10px;
   height: 3px;
-  background: #7eb8d8;
+  background: #c4a35a;
   border-radius: 1px;
+}
+
+.wind-chart-legend .swatch.wind-dir {
+  width: auto;
+  height: auto;
+  background: none;
+  font-size: 0.65rem;
+  line-height: 1;
+  color: var(--ink);
+  margin-right: 0;
+}
+
+.wind-chart-baseline {
+  stroke: rgba(28, 36, 32, 0.2);
+  stroke-width: 1;
+}
+
+.wind-chart-dir {
+  fill: #3a4540;
+  opacity: 0.72;
+}
+
+.wind-chart-dir.selected {
+  fill: var(--ink);
+  opacity: 1;
 }
 
 .wind-chart-svg {
@@ -292,19 +461,17 @@
 }
 
 .wind-chart-bar {
-  fill: #2f6f9f;
+  stroke: none;
 }
 
 .wind-chart-gust-cap {
-  fill: #8ec5e0;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 0.6;
 }
 
 .wind-bar-group.selected .wind-chart-bar {
-  fill: #1f5a86;
-}
-
-.wind-bar-group.selected .wind-chart-gust-cap {
-  fill: #5aafd0;
+  stroke: rgba(28, 36, 32, 0.55);
+  stroke-width: 1;
 }
 
 .wind-chart-selection {

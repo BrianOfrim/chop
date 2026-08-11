@@ -1,32 +1,23 @@
 import type { GridMeta } from "@chop/wave-engine";
+import {
+  DEFAULT_WAVE_SCALE,
+  sampleRgba,
+  type ColorScaleId,
+} from "./colorScales";
 
 /** Fixed Hs color scale max (m). Values above clip to the top stop. */
 export const HS_COLOR_MAX_M = 1;
 
 /** Color scale for Hs in meters → [r,g,b,a]. */
-export function hsColor(hsM: number, vmax: number = HS_COLOR_MAX_M): [number, number, number, number] {
+export function hsColor(
+  hsM: number,
+  vmax: number = HS_COLOR_MAX_M,
+  scale: ColorScaleId = DEFAULT_WAVE_SCALE,
+): [number, number, number, number] {
   if (!Number.isFinite(hsM) || hsM < 0) return [0, 0, 0, 0];
   const t = Math.max(0, Math.min(1, hsM / Math.max(vmax, 0.01)));
-  // Amber/teal chop scale — high opacity so it reads on top of basemap water
-  const stops: Array<[number, number, number, number]> = [
-    [0.0, 8, 70, 92],
-    [0.25, 18, 130, 140],
-    [0.5, 70, 175, 150],
-    [0.75, 220, 180, 70],
-    [1.0, 255, 245, 210],
-  ];
-  let i = 0;
-  while (i < stops.length - 2 && t > stops[i + 1]![0]) i++;
-  const a = stops[i]!;
-  const b = stops[i + 1]!;
-  const u = (t - a[0]) / (b[0] - a[0] || 1);
-  return [
-    Math.round(a[1] + (b[1] - a[1]) * u),
-    Math.round(a[2] + (b[2] - a[2]) * u),
-    Math.round(a[3] + (b[3] - a[3]) * u),
-    // Always fairly opaque on water so light-wind days still show a field
-    Math.round(150 + 105 * t),
-  ];
+  // Fairly opaque on water so light-wind days still show a field
+  return sampleRgba(scale, t, 150, 255);
 }
 
 /** Rasterize Hs grid to ImageData for MapLibre image source. */
@@ -34,12 +25,13 @@ export function hsToImageData(
   hs: Float32Array,
   meta: GridMeta,
   vmax: number = HS_COLOR_MAX_M,
+  scale: ColorScaleId = DEFAULT_WAVE_SCALE,
 ): ImageData {
   const { ncols, nrows } = meta;
   const img = new ImageData(ncols, nrows);
   const px = img.data;
   for (let i = 0; i < ncols * nrows; i++) {
-    const [r, g, b, a] = hsColor(hs[i]!, vmax);
+    const [r, g, b, a] = hsColor(hs[i]!, vmax, scale);
     const o = i * 4;
     px[o] = r;
     px[o + 1] = g;

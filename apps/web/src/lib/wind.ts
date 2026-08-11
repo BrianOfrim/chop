@@ -1,3 +1,6 @@
+import type { WindSpeedUnit } from "./units";
+import { formatWindSpeed, mpsToWind, windUnitLabel } from "./units";
+
 export type WindHour = {
   time: string;
   windSpeedMps: number;
@@ -42,7 +45,10 @@ export async function fetchHrdpsWind(
   const url = new URL("https://api.open-meteo.com/v1/gem");
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("longitude", String(lon));
-  url.searchParams.set("hourly", "wind_speed_10m,wind_direction_10m,wind_gusts_10m");
+  url.searchParams.set(
+    "hourly",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+  );
   url.searchParams.set("wind_speed_unit", "ms");
   url.searchParams.set("timezone", "auto");
   url.searchParams.set("forecast_days", "2");
@@ -66,7 +72,10 @@ export async function fetchHrdpsWindForDate(
   const url = new URL("https://api.open-meteo.com/v1/gem");
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("longitude", String(lon));
-  url.searchParams.set("hourly", "wind_speed_10m,wind_direction_10m,wind_gusts_10m");
+  url.searchParams.set(
+    "hourly",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+  );
   url.searchParams.set("wind_speed_unit", "ms");
   url.searchParams.set("timezone", "auto");
   url.searchParams.set("start_date", date);
@@ -96,48 +105,50 @@ export function strongestWindHourIndex(hours: WindHour[]): number {
   return best;
 }
 
-export function formatWindKt(mps: number): string {
-  return `${(mps * 1.94384).toFixed(0)} kt`;
-}
+const DIRS = [
+  "N",
+  "NNE",
+  "NE",
+  "ENE",
+  "E",
+  "ESE",
+  "SE",
+  "SSE",
+  "S",
+  "SSW",
+  "SW",
+  "WSW",
+  "W",
+  "WNW",
+  "NW",
+  "NNW",
+];
 
 export function formatWind(
   mps: number,
   fromDeg: number,
   gustMps?: number | null,
+  unit: WindSpeedUnit = "kt",
 ): string {
-  const dirs = [
-    "N",
-    "NNE",
-    "NE",
-    "ENE",
-    "E",
-    "ESE",
-    "SE",
-    "SSE",
-    "S",
-    "SSW",
-    "SW",
-    "WSW",
-    "W",
-    "WNW",
-    "NW",
-    "NNW",
-  ];
   const i = Math.round((((fromDeg % 360) + 360) % 360) / 22.5) % 16;
+  const digits = unit === "mps" ? 1 : 0;
   const gust =
     gustMps != null && Number.isFinite(gustMps)
-      ? ` G${(gustMps * 1.94384).toFixed(0)}`
+      ? ` G${mpsToWind(gustMps, unit).toFixed(digits)}`
       : "";
-  return `${formatWindKt(mps)}${gust} from ${dirs[i]} (${fromDeg.toFixed(0)}°)`;
+  return `${formatWindSpeed(mps, unit)}${gust} from ${DIRS[i]} (${fromDeg.toFixed(0)}°)`;
 }
 
 /** Compact label for the map wind arrow (mean + gust). */
 export function formatWindMapLabel(
   mps: number,
   gustMps?: number | null,
+  unit: WindSpeedUnit = "kt",
 ): string {
+  const digits = unit === "mps" ? 1 : 0;
+  const mean = `${mpsToWind(mps, unit).toFixed(digits)} ${windUnitLabel(unit)}`;
   if (gustMps != null && Number.isFinite(gustMps)) {
-    return `${formatWindKt(mps)} G${(gustMps * 1.94384).toFixed(0)}`;
+    return `${mean} G${mpsToWind(gustMps, unit).toFixed(digits)}`;
   }
-  return formatWindKt(mps);
+  return mean;
 }

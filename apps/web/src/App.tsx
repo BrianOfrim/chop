@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapView } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
+import { WaveChart } from "./components/WaveChart";
 import {
   loadLakeGrids,
   loadLakeIndex,
@@ -10,9 +11,21 @@ import {
 import { fetchHrdpsWind, formatWind, type WindForecast } from "./lib/wind";
 import {
   fetchLakeSurfaceTemp,
-  formatWaterTemp,
   type LakeSurfaceTemp,
 } from "./lib/lswt";
+import {
+  DEFAULT_UNITS,
+  TEMP_UNIT_OPTIONS,
+  WAVE_UNIT_OPTIONS,
+  WIND_UNIT_OPTIONS,
+  formatTemp,
+  loadUnitPrefs,
+  saveUnitPrefs,
+  type TempUnit,
+  type UnitPrefs,
+  type WaveHeightUnit,
+  type WindSpeedUnit,
+} from "./lib/units";
 import type { LakeGrids } from "@chop/wave-engine";
 import "./App.css";
 
@@ -32,6 +45,17 @@ export default function App() {
   const [hourIndex, setHourIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [units, setUnits] = useState<UnitPrefs>(() =>
+    typeof window !== "undefined" ? loadUnitPrefs() : { ...DEFAULT_UNITS },
+  );
+
+  function updateUnits(patch: Partial<UnitPrefs>) {
+    setUnits((prev) => {
+      const next = { ...prev, ...patch };
+      saveUnitPrefs(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     loadLakeIndex()
@@ -155,6 +179,53 @@ export default function App() {
             ))}
           </select>
         </label>
+        <div className="unit-prefs" title="Display units">
+          <label className="unit-picker">
+            Wind
+            <select
+              value={units.wind}
+              onChange={(e) =>
+                updateUnits({ wind: e.target.value as WindSpeedUnit })
+              }
+            >
+              {WIND_UNIT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="unit-picker">
+            Waves
+            <select
+              value={units.wave}
+              onChange={(e) =>
+                updateUnits({ wave: e.target.value as WaveHeightUnit })
+              }
+            >
+              {WAVE_UNIT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="unit-picker">
+            Temp
+            <select
+              value={units.temp}
+              onChange={(e) =>
+                updateUnits({ temp: e.target.value as TempUnit })
+              }
+            >
+              {TEMP_UNIT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </header>
 
       <main className="main">
@@ -167,6 +238,7 @@ export default function App() {
             spot={spot}
             shoreline={shoreline}
             wind={wind}
+            units={units}
           />
         )}
 
@@ -178,7 +250,12 @@ export default function App() {
           {wind && (
             <>
               <span>
-                {formatWind(wind.windSpeedMps, wind.windDirDeg, wind.gustMps)}
+                {formatWind(
+                  wind.windSpeedMps,
+                  wind.windDirDeg,
+                  wind.gustMps,
+                  units.wind,
+                )}
               </span>
               <span className="muted">{timeLabel}</span>
               <span className="muted">model {forecast?.model}</span>
@@ -189,7 +266,7 @@ export default function App() {
           )}
           {waterTempStatus === "ready" && waterTemp && (
             <span title={waterTemp.note}>
-              Water {formatWaterTemp(waterTemp.tempC)}
+              Water {formatTemp(waterTemp.tempC, units.temp)}
               <span className="muted">
                 {" "}
                 MODIS {waterTemp.product === "LST_Night_1km" ? "night" : "day"}{" "}
@@ -209,7 +286,17 @@ export default function App() {
               hours={forecast.hours}
               hourIndex={hourIndex}
               onSelectHour={setHourIndex}
+              windUnit={units.wind}
             />
+            {grids && (
+              <WaveChart
+                hours={forecast.hours}
+                hourIndex={hourIndex}
+                onSelectHour={setHourIndex}
+                grids={grids}
+                waveUnit={units.wave}
+              />
+            )}
             <div className="scrubber">
               <input
                 type="range"
