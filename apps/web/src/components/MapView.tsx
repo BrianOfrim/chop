@@ -36,6 +36,7 @@ type Props = {
   shoreline: GeoJSON.FeatureCollection;
   wind: WindHour | null;
   units: UnitPrefs;
+  simulating?: boolean;
   forecastPoint?: ForecastPoint | null;
   onChoosePoint?: (point: ForecastPoint) => void;
   onClearPoint?: () => void;
@@ -54,32 +55,104 @@ type HoverInfo = {
   gustMps: number | null;
 };
 
-/** Simple raster basemap — more reliable than remote vector styles. */
-const STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    carto: {
-      type: "raster",
-      tiles: [
-        "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
-        "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
-        "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
-      ],
-      tileSize: 256,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+type BasemapId = "map" | "satellite";
+
+const BASEMAP_KEY = "chop.basemap";
+
+function loadBasemap(): BasemapId {
+  try {
+    return localStorage.getItem(BASEMAP_KEY) === "satellite" ? "satellite" : "map";
+  } catch {
+    return "map";
+  }
+}
+
+function saveBasemap(id: BasemapId): void {
+  try {
+    localStorage.setItem(BASEMAP_KEY, id);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function applyBasemap(map: MapLibreMap, id: BasemapId): void {
+  if (map.getLayer("basemap-map")) {
+    map.setLayoutProperty(
+      "basemap-map",
+      "visibility",
+      id === "map" ? "visible" : "none",
+    );
+  }
+  if (map.getLayer("basemap-satellite")) {
+    map.setLayoutProperty(
+      "basemap-satellite",
+      "visibility",
+      id === "satellite" ? "visible" : "none",
+    );
+  }
+  if (map.getLayer("shoreline-line")) {
+    map.setPaintProperty(
+      "shoreline-line",
+      "line-color",
+      id === "satellite" ? "#f4f1ea" : "#163a44",
+    );
+  }
+  if (map.getLayer("shoreline-fill")) {
+    map.setPaintProperty(
+      "shoreline-fill",
+      "fill-opacity",
+      id === "satellite" ? 0 : 0.06,
+    );
+  }
+}
+
+/** Raster basemaps — Carto light + Esri World Imagery. Overlay layers are added after load. */
+function makeStyle(basemap: BasemapId): StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      carto: {
+        type: "raster",
+        tiles: [
+          "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
+          "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
+          "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png",
+        ],
+        tileSize: 256,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      },
+      satellite: {
+        type: "raster",
+        tiles: [
+          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution:
+          "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+      },
     },
-  },
-  layers: [
-    {
-      id: "carto",
-      type: "raster",
-      source: "carto",
-      minzoom: 0,
-      maxzoom: 20,
-    },
-  ],
-};
+    layers: [
+      {
+        id: "basemap-satellite",
+        type: "raster",
+        source: "satellite",
+        layout: { visibility: basemap === "satellite" ? "visible" : "none" },
+        minzoom: 0,
+        maxzoom: 22,
+      },
+      {
+        id: "basemap-map",
+        type: "raster",
+        source: "carto",
+        layout: { visibility: basemap === "map" ? "visible" : "none" },
+        minzoom: 0,
+        maxzoom: 20,
+      },
+    ],
+  };
+}
 
 function hsCoordinates(meta: LakeGrids["meta"]): [
   [number, number],
@@ -364,6 +437,7 @@ export function MapView({
   shoreline,
   wind,
   units,
+  simulating = false,
   forecastPoint = null,
   onChoosePoint,
   onClearPoint,
@@ -383,6 +457,9 @@ export function MapView({
   onClearPointRef.current = onClearPoint;
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
+  const [basemap, setBasemap] = useState<BasemapId>(() =>
+    typeof window !== "undefined" ? loadBasemap() : "map",
+  );
 
   gridsRef.current = grids;
   shorelineRef.current = shoreline;
@@ -402,7 +479,7 @@ export function MapView({
     const { meta } = grids;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: STYLE,
+      style: makeStyle(loadBasemap()),
       center: [spot.identity.longitude, spot.identity.latitude],
       zoom: 11.2,
     });
@@ -566,6 +643,7 @@ export function MapView({
         },
       });
 
+      applyBasemap(map, loadBasemap());
       fitLake(map, meta, shoreline, 0);
       setReady(true);
     });
@@ -672,6 +750,13 @@ export function MapView({
     fitLake(map, meta, shoreline, 0);
   }, [grids, shoreline, ready]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    applyBasemap(map, basemap);
+    saveBasemap(basemap);
+  }, [basemap, ready]);
+
   // Draw upwind fetch ray from hover point to shoreline
   useEffect(() => {
     const map = mapRef.current;
@@ -772,6 +857,24 @@ export function MapView({
   return (
     <div className="map-wrap">
       <div ref={containerRef} className="map" />
+      <div className="basemap-toggle" role="group" aria-label="Basemap">
+        <button
+          type="button"
+          className={basemap === "map" ? "is-on" : ""}
+          aria-pressed={basemap === "map"}
+          onClick={() => setBasemap("map")}
+        >
+          Map
+        </button>
+        <button
+          type="button"
+          className={basemap === "satellite" ? "is-on" : ""}
+          aria-pressed={basemap === "satellite"}
+          onClick={() => setBasemap("satellite")}
+        >
+          Satellite
+        </button>
+      </div>
       <div className="legend">
         <div className="legend-title">Wave height Hs</div>
         <div
@@ -782,7 +885,11 @@ export function MapView({
           <span>0</span>
           <span>{formatWaveHeight(vmax, units.wave)}</span>
         </div>
-        <p className="legend-note">SMB fetch-limited + depth cap. Wind: HRDPS.</p>
+        <p className="legend-note">
+          {simulating
+            ? "SMB fetch-limited + depth cap. Wind: simulator."
+            : "SMB fetch-limited + depth cap. Wind: HRDPS."}
+        </p>
         {forecastPoint ? (
           <button type="button" className="legend-pin-btn" onClick={() => onClearPoint?.()}>
             Pinned spot · Clear

@@ -3,6 +3,7 @@ import { MapView } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
 import { WaveChart, type ForecastPoint } from "./components/WaveChart";
 import { ForecastTimeAxis } from "./components/ForecastTimeAxis";
+import { WeatherStrip } from "./components/WeatherStrip";
 import {
   loadLakeGrids,
   loadLakeIndex,
@@ -14,6 +15,7 @@ import {
   formatWind,
   nearestHourIndex,
   type WindForecast,
+  type WindHour,
 } from "./lib/wind";
 import {
   fetchLakeSurfaceTemp,
@@ -39,6 +41,8 @@ import {
   type LakeGrids,
 } from "@chop/wave-engine";
 import { sliderInsetStyle } from "./lib/forecastChart";
+import { WindSimPanel } from "./components/WindSimPanel";
+import { formatWeatherHour, isThunder } from "./lib/weather";
 import "./App.css";
 
 export default function App() {
@@ -56,6 +60,9 @@ export default function App() {
   >("idle");
   const [hourIndex, setHourIndex] = useState(0);
   const [forecastPoint, setForecastPoint] = useState<ForecastPoint | null>(null);
+  const [simOn, setSimOn] = useState(false);
+  const [simSpeedMps, setSimSpeedMps] = useState(8);
+  const [simDirDeg, setSimDirDeg] = useState(270);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [units, setUnits] = useState<UnitPrefs>(() =>
@@ -149,7 +156,29 @@ export default function App() {
     };
   }, [lakeId, lakes]);
 
-  const wind = forecast?.hours[hourIndex] ?? null;
+  const forecastWind = forecast?.hours[hourIndex] ?? null;
+
+  function enableSim(on: boolean) {
+    if (on && !simOn && forecastWind) {
+      setSimSpeedMps(forecastWind.windSpeedMps);
+      setSimDirDeg(forecastWind.windDirDeg);
+    }
+    setSimOn(on);
+  }
+
+  const simWind: WindHour = useMemo(
+    () => ({
+      time: "sim",
+      windSpeedMps: simSpeedMps,
+      windDirDeg: simDirDeg,
+      gustMps: null,
+      weatherCode: null,
+      precipMm: 0,
+    }),
+    [simSpeedMps, simDirDeg],
+  );
+
+  const wind = simOn ? simWind : forecastWind;
 
   const selectedHsM = useMemo(() => {
     if (!grids || !wind) return null;
@@ -262,17 +291,31 @@ export default function App() {
             shoreline={shoreline}
             wind={wind}
             units={units}
+            simulating={simOn}
             forecastPoint={forecastPoint}
             onChoosePoint={setForecastPoint}
             onClearPoint={() => setForecastPoint(null)}
           />
         )}
+        <WindSimPanel
+          active={simOn}
+          onActiveChange={enableSim}
+          speedMps={simSpeedMps}
+          dirDeg={simDirDeg}
+          onSpeedMps={setSimSpeedMps}
+          onDirDeg={setSimDirDeg}
+          windUnit={units.wind}
+        />
       </main>
 
       <footer className="bottombar">
         <div className="readout">
           <strong>{spot?.identity.name ?? "—"}</strong>
-          {wind && <span className="muted">{timeLabel}</span>}
+          {simOn ? (
+            <span className="sim-badge">Sim</span>
+          ) : (
+            wind && <span className="muted">{timeLabel}</span>
+          )}
           {wind && (
             <span>
               {formatWind(
@@ -280,6 +323,20 @@ export default function App() {
                 wind.windDirDeg,
                 wind.gustMps,
                 units.wind,
+              )}
+            </span>
+          )}
+          {!simOn && forecastWind && (
+            <span
+              className={
+                isThunder(forecastWind.weatherCode)
+                  ? "wx-readout thunder"
+                  : undefined
+              }
+            >
+              {formatWeatherHour(
+                forecastWind.weatherCode,
+                forecastWind.precipMm,
               )}
             </span>
           )}
@@ -309,7 +366,7 @@ export default function App() {
           )}
         </div>
         {forecast && forecast.hours.length > 0 && (
-          <div className="forecast-panel">
+          <div className={`forecast-panel${simOn ? " is-sim" : ""}`}>
             <WindChart
               hours={forecast.hours}
               hourIndex={hourIndex}
@@ -326,6 +383,11 @@ export default function App() {
                 sampleAt={forecastPoint}
               />
             )}
+            <WeatherStrip
+              hours={forecast.hours}
+              hourIndex={hourIndex}
+              onSelectHour={setHourIndex}
+            />
             <div className="forecast-plot">
               <div className="forecast-plot-rail" aria-hidden />
               <ForecastTimeAxis

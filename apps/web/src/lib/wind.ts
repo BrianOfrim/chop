@@ -6,6 +6,8 @@ export type WindHour = {
   windSpeedMps: number;
   windDirDeg: number;
   gustMps: number | null;
+  weatherCode: number | null;
+  precipMm: number;
 };
 
 export type WindForecast = {
@@ -21,19 +23,28 @@ type GemHourlyResponse = {
     wind_speed_10m?: number[];
     wind_direction_10m?: number[];
     wind_gusts_10m?: Array<number | null>;
+    weather_code?: Array<number | null>;
+    precipitation?: Array<number | null>;
   };
 };
+
+const GEM_HOURLY =
+  "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,precipitation";
 
 function parseGemHours(data: GemHourlyResponse): WindHour[] {
   const t: string[] = data.hourly?.time ?? [];
   const spd: number[] = data.hourly?.wind_speed_10m ?? [];
   const dir: number[] = data.hourly?.wind_direction_10m ?? [];
   const gust: Array<number | null> = data.hourly?.wind_gusts_10m ?? [];
+  const code: Array<number | null> = data.hourly?.weather_code ?? [];
+  const precip: Array<number | null> = data.hourly?.precipitation ?? [];
   return t.map((time, i) => ({
     time,
     windSpeedMps: spd[i] ?? 0,
     windDirDeg: dir[i] ?? 0,
     gustMps: gust[i] ?? null,
+    weatherCode: code[i] ?? null,
+    precipMm: precip[i] ?? 0,
   }));
 }
 
@@ -45,10 +56,7 @@ export async function fetchHrdpsWind(
   const url = new URL("https://api.open-meteo.com/v1/gem");
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("longitude", String(lon));
-  url.searchParams.set(
-    "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
-  );
+  url.searchParams.set("hourly", GEM_HOURLY);
   url.searchParams.set("wind_speed_unit", "ms");
   url.searchParams.set("timezone", "auto");
   url.searchParams.set("forecast_days", "7");
@@ -72,10 +80,7 @@ export async function fetchHrdpsWindForDate(
   const url = new URL("https://api.open-meteo.com/v1/gem");
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("longitude", String(lon));
-  url.searchParams.set(
-    "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m",
-  );
+  url.searchParams.set("hourly", GEM_HOURLY);
   url.searchParams.set("wind_speed_unit", "ms");
   url.searchParams.set("timezone", "auto");
   url.searchParams.set("start_date", date);
@@ -141,19 +146,23 @@ const DIRS = [
   "NNW",
 ];
 
+export function cardinalFromDeg(fromDeg: number): string {
+  const i = Math.round((((fromDeg % 360) + 360) % 360) / 22.5) % 16;
+  return DIRS[i]!;
+}
+
 export function formatWind(
   mps: number,
   fromDeg: number,
   gustMps?: number | null,
   unit: WindSpeedUnit = "kt",
 ): string {
-  const i = Math.round((((fromDeg % 360) + 360) % 360) / 22.5) % 16;
   const digits = unit === "mps" ? 1 : 0;
   const gust =
     gustMps != null && Number.isFinite(gustMps)
       ? ` G${mpsToWind(gustMps, unit).toFixed(digits)}`
       : "";
-  return `${formatWindSpeed(mps, unit)}${gust} from ${DIRS[i]} (${fromDeg.toFixed(0)}°)`;
+  return `${formatWindSpeed(mps, unit)}${gust} from ${cardinalFromDeg(fromDeg)} (${fromDeg.toFixed(0)}°)`;
 }
 
 /** Compact label for the map wind arrow (mean + gust). */

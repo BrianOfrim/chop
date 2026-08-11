@@ -368,6 +368,40 @@
   display: block;
 }
 
+.weather-strip-svg {
+  display: block;
+}
+
+.wx-thunder-bg {
+  fill: rgba(212, 90, 18, 0.18);
+  pointer-events: none;
+}
+
+.wx-precip-bar {
+  fill: #2a6f9a;
+  pointer-events: none;
+}
+
+.wx-precip-bar.thunder {
+  fill: #d45a12;
+}
+
+.wx-precip-label {
+  fill: #2a6f9a;
+  font-size: 6.5px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.wx-precip-label.thunder {
+  fill: #b64a10;
+}
+
+.wx-readout.thunder {
+  color: #b64a10;
+  font-weight: 600;
+}
+
 .scrubber-row {
   margin-top: 0.1rem;
   align-items: center;
@@ -602,4 +636,204 @@
 
 .maplibregl-ctrl-attrib {
   font-size: 10px;
+}
+
+.basemap-toggle {
+  position: absolute;
+  top: 0.75rem;
+  right: 3.15rem;
+  z-index: 3;
+  display: flex;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(20, 40, 30, 0.08);
+}
+
+.basemap-toggle button {
+  border: none;
+  background: transparent;
+  padding: 0.38rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.basemap-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+
+.basemap-toggle button.is-on {
+  color: var(--accent);
+  background: rgba(31, 111, 120, 0.1);
+}
+
+.sim-panel {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.85rem;
+  z-index: 3;
+  width: 15.5rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(20, 40, 30, 0.08);
+  overflow: hidden;
+}
+
+.sim-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.sim-tabs button {
+  border: none;
+  background: transparent;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+
+.sim-tabs button.is-on {
+  color: var(--accent);
+  background: rgba(31, 111, 120, 0.08);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.sim-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem 0.75rem;
+}
+
+.sim-lead {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.sim-field {
+  display: grid;
+  grid-template-columns: 2.6rem 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sim-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sim-value {
+  font-size: 0.78rem;
+  font-weight: 600;
+  min-width: 3.4rem;
+  text-align: right;
+}
+
+.sim-field input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.sim-dir {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.sim-compass {
+  width: 5.5rem;
+  height: 5.5rem;
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.sim-compass-ring {
+  fill: rgba(255, 255, 255, 0.7);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.sim-compass-card {
+  fill: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+.sim-compass-shaft {
+  stroke: var(--accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.sim-compass-head {
+  fill: var(--accent);
+  pointer-events: none;
+}
+
+.sim-compass-hub {
+  fill: var(--ink);
+  pointer-events: none;
+}
+
+.sim-dir-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.sim-dir-meta strong {
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+}
+
+.sim-toward {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.sim-dir-num {
+  width: 4.2rem;
+  margin-top: 0.25rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.sim-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(31, 111, 120, 0.12);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.forecast-panel.is-sim {
+  opacity: 0.42;
+  pointer-events: none;
 }

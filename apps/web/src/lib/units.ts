@@ -77,6 +77,19 @@ export function mpsToWind(mps: number, unit: WindSpeedUnit): number {
   }
 }
 
+export function windToMps(value: number, unit: WindSpeedUnit): number {
+  switch (unit) {
+    case "kt":
+      return value / 1.94384;
+    case "mph":
+      return value / 2.23694;
+    case "kmh":
+      return value / 3.6;
+    default:
+      return value;
+  }
+}
+
 export function windUnitLabel(unit: WindSpeedUnit): string {
   return WIND_UNIT_OPTIONS.find((o) => o.value === unit)?.label ?? unit;
 }
