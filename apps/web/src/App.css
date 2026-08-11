@@ -161,6 +161,25 @@
   color: var(--muted);
 }
 
+.legend-pin-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.45rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.legend-pin-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .hover-card {
   position: absolute;
   z-index: 2;

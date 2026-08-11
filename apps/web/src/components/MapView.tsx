@@ -14,6 +14,7 @@ import {
   sampleGrid,
   type LakeGrids,
 } from "@chop/wave-engine";
+import type { ForecastPoint } from "./WaveChart";
 import type { SpotProfile } from "../lib/lakeAssets";
 import { hsToImageData, makeArrowIcon, HS_COLOR_MAX_M } from "../lib/hsOverlay";
 import {
@@ -35,6 +36,9 @@ type Props = {
   shoreline: GeoJSON.FeatureCollection;
   wind: WindHour | null;
   units: UnitPrefs;
+  forecastPoint?: ForecastPoint | null;
+  onChoosePoint?: (point: ForecastPoint) => void;
+  onClearPoint?: () => void;
 };
 
 type HoverInfo = {
@@ -354,7 +358,16 @@ function fetchRayGeoJSON(
   };
 }
 
-export function MapView({ grids, spot, shoreline, wind, units }: Props) {
+export function MapView({
+  grids,
+  spot,
+  shoreline,
+  wind,
+  units,
+  forecastPoint = null,
+  onChoosePoint,
+  onClearPoint,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const hsCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -364,6 +377,10 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
   const gridsRef = useRef(grids);
   const shorelineRef = useRef(shoreline);
   const userMovedRef = useRef(false);
+  const onChoosePointRef = useRef(onChoosePoint);
+  const onClearPointRef = useRef(onClearPoint);
+  onChoosePointRef.current = onChoosePoint;
+  onClearPointRef.current = onClearPoint;
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -435,6 +452,29 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
           "raster-opacity": 0.92,
           "raster-resampling": "linear",
           "raster-fade-duration": 0,
+        },
+      });
+
+      map.addSource("forecast-point", { type: "geojson", data: EMPTY_FC });
+      map.addLayer({
+        id: "forecast-point-halo",
+        type: "circle",
+        source: "forecast-point",
+        paint: {
+          "circle-radius": 9,
+          "circle-color": "#f8f6f0",
+          "circle-opacity": 0.9,
+          "circle-stroke-color": "#1c201e",
+          "circle-stroke-width": 1.5,
+        },
+      });
+      map.addLayer({
+        id: "forecast-point-dot",
+        type: "circle",
+        source: "forecast-point",
+        paint: {
+          "circle-radius": 4,
+          "circle-color": "#0f6b5c",
         },
       });
 
@@ -571,6 +611,14 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
       });
     });
 
+    map.on("click", (e: MapMouseEvent) => {
+      const { lng, lat } = e.lngLat;
+      const g = gridsRef.current;
+      const depthM = sampleGrid(g.depth, g.meta, lng, lat);
+      if (depthM == null || depthM <= 0) return;
+      onChoosePointRef.current?.({ lon: lng, lat });
+    });
+
     map.on("mouseout", () => setHover(null));
 
     const syncWindLabelOffset = () => {
@@ -697,6 +745,30 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
     });
   }, [wind, ready, grids.meta, units.wind]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource("forecast-point") as GeoJSONSource | undefined;
+    if (!src) return;
+    if (!forecastPoint) {
+      src.setData(EMPTY_FC);
+      return;
+    }
+    src.setData({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Point",
+            coordinates: [forecastPoint.lon, forecastPoint.lat],
+          },
+        },
+      ],
+    });
+  }, [forecastPoint, ready]);
+
   return (
     <div className="map-wrap">
       <div ref={containerRef} className="map" />
@@ -711,6 +783,13 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
           <span>{formatWaveHeight(vmax, units.wave)}</span>
         </div>
         <p className="legend-note">SMB fetch-limited + depth cap. Wind: HRDPS.</p>
+        {forecastPoint ? (
+          <button type="button" className="legend-pin-btn" onClick={() => onClearPoint?.()}>
+            Pinned spot · Clear
+          </button>
+        ) : (
+          <p className="legend-note">Click the lake to pin a forecast spot.</p>
+        )}
       </div>
       {hover && (
         <div

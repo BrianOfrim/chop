@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapView } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
-import { WaveChart } from "./components/WaveChart";
+import { WaveChart, type ForecastPoint } from "./components/WaveChart";
 import { ForecastTimeAxis } from "./components/ForecastTimeAxis";
 import {
   loadLakeGrids,
@@ -33,7 +33,11 @@ import {
   type WaveHeightUnit,
   type WindSpeedUnit,
 } from "./lib/units";
-import { computeHsGrid, type LakeGrids } from "@chop/wave-engine";
+import {
+  computeHsGrid,
+  sampleGridNearestWater,
+  type LakeGrids,
+} from "@chop/wave-engine";
 import { sliderInsetStyle } from "./lib/forecastChart";
 import "./App.css";
 
@@ -51,6 +55,7 @@ export default function App() {
     "idle" | "loading" | "ready" | "unavailable"
   >("idle");
   const [hourIndex, setHourIndex] = useState(0);
+  const [forecastPoint, setForecastPoint] = useState<ForecastPoint | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [units, setUnits] = useState<UnitPrefs>(() =>
@@ -84,6 +89,7 @@ export default function App() {
     setGrids(null);
     setSpot(null);
     setShoreline(null);
+    setForecastPoint(null);
     (async () => {
       try {
         const loaded = await loadLakeGrids(entry.path);
@@ -145,16 +151,24 @@ export default function App() {
 
   const wind = forecast?.hours[hourIndex] ?? null;
 
-  const selectedMaxHsM = useMemo(() => {
+  const selectedHsM = useMemo(() => {
     if (!grids || !wind) return null;
     const hs = computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
+    if (forecastPoint) {
+      return sampleGridNearestWater(
+        hs,
+        grids.meta,
+        forecastPoint.lon,
+        forecastPoint.lat,
+      );
+    }
     let m = 0;
     for (let i = 0; i < hs.length; i++) {
       const v = hs[i]!;
       if (Number.isFinite(v) && v > m) m = v;
     }
     return m;
-  }, [grids, wind]);
+  }, [grids, wind, forecastPoint]);
 
   const timeLabel = useMemo(() => {
     if (!wind) return "";
@@ -248,6 +262,9 @@ export default function App() {
             shoreline={shoreline}
             wind={wind}
             units={units}
+            forecastPoint={forecastPoint}
+            onChoosePoint={setForecastPoint}
+            onClearPoint={() => setForecastPoint(null)}
           />
         )}
       </main>
@@ -266,8 +283,11 @@ export default function App() {
               )}
             </span>
           )}
-          {selectedMaxHsM != null && (
-            <span>max Hs {formatWaveHeight(selectedMaxHsM, units.wave)}</span>
+          {selectedHsM != null && (
+            <span>
+              {forecastPoint ? "Hs" : "max Hs"}{" "}
+              {formatWaveHeight(selectedHsM, units.wave)}
+            </span>
           )}
           {waterTempStatus === "loading" && (
             <span className="muted">water temp…</span>
@@ -303,6 +323,7 @@ export default function App() {
                 onSelectHour={setHourIndex}
                 grids={grids}
                 waveUnit={units.wave}
+                sampleAt={forecastPoint}
               />
             )}
             <div className="forecast-plot">

@@ -11,4 +11,5 @@ export {
   fetchAtDir,
   computeHsGrid,
   sampleGrid,
+  sampleGridNearestWater,
 } from "./grid.js";

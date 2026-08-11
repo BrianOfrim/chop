@@ -1,5 +1,9 @@
 import { useMemo } from "react";
-import { computeHsGrid, type LakeGrids } from "@chop/wave-engine";
+import {
+  computeHsGrid,
+  sampleGridNearestWater,
+  type LakeGrids,
+} from "@chop/wave-engine";
 import { hsColor, HS_COLOR_MAX_M } from "../lib/hsOverlay";
 import type { WindHour } from "../lib/wind";
 import {
@@ -20,12 +24,15 @@ import {
 } from "../lib/colorScales";
 import { ColorScaleLegend } from "./ColorScaleLegend";
 
+export type ForecastPoint = { lon: number; lat: number };
+
 type Props = {
   hours: WindHour[];
   hourIndex: number;
   onSelectHour: (index: number) => void;
   grids: LakeGrids;
   waveUnit: WaveHeightUnit;
+  sampleAt?: ForecastPoint | null;
 };
 
 const W = CHART_W;
@@ -57,18 +64,26 @@ export function WaveChart({
   onSelectHour,
   grids,
   waveUnit,
+  sampleAt = null,
 }: Props) {
-  const maxHsMSeries = useMemo(
+  const hsMSeries = useMemo(
     () =>
-      hours.map((h) =>
-        maxHsM(computeHsGrid(grids, h.windSpeedMps, h.windDirDeg)),
-      ),
-    [grids, hours],
+      hours.map((h) => {
+        const hs = computeHsGrid(grids, h.windSpeedMps, h.windDirDeg);
+        if (sampleAt) {
+          return (
+            sampleGridNearestWater(hs, grids.meta, sampleAt.lon, sampleAt.lat) ??
+            0
+          );
+        }
+        return maxHsM(hs);
+      }),
+    [grids, hours, sampleAt],
   );
 
   const chart = useMemo(() => {
     if (hours.length === 0) return null;
-    const vals = maxHsMSeries.map((m) => metersToWave(m, waveUnit));
+    const vals = hsMSeries.map((m) => metersToWave(m, waveUnit));
     const peak = Math.max(...vals, metersToWave(0.01, waveUnit));
     const floor = metersToWave(HS_COLOR_MAX_M * 0.5, waveUnit);
     const yMax = niceWaveMax(Math.max(peak, floor), waveUnit);
@@ -80,7 +95,7 @@ export function WaveChart({
     const yAt = (v: number) => PAD.top + innerH * (1 - v / yMax);
     const baseline = PAD.top + innerH;
 
-    const bars = maxHsMSeries.map((m, i) => {
+    const bars = hsMSeries.map((m, i) => {
       const v = vals[i]!;
       const top = yAt(v);
       const [r, g, b, a] = hsColor(m, HS_COLOR_MAX_M, DEFAULT_WAVE_SCALE);
@@ -110,7 +125,7 @@ export function WaveChart({
       dayDividers,
       innerH,
     };
-  }, [hours, hourIndex, maxHsMSeries, waveUnit]);
+  }, [hours, hourIndex, hsMSeries, waveUnit]);
 
   if (!chart) return null;
 
@@ -134,7 +149,11 @@ export function WaveChart({
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMinYMid meet"
         role="img"
-        aria-label="Maximum lake wave height over the forecast period"
+        aria-label={
+          sampleAt
+            ? "Wave height at the pinned lake point over the forecast period"
+            : "Maximum lake wave height over the forecast period"
+        }
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           onSelectHour(

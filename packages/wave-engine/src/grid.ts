@@ -134,3 +134,37 @@ export function sampleGrid(
   if (![a, b, c, d].every((x) => Number.isFinite(x))) return null;
   return a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + d * tx * ty;
 }
+
+/** Bilinear sample, then nearest finite water cell within a few cells (near-shore). */
+export function sampleGridNearestWater(
+  values: Float32Array,
+  meta: GridMeta,
+  lon: number,
+  lat: number,
+): number | null {
+  const bilinear = sampleGrid(values, meta, lon, lat);
+  if (bilinear != null) return bilinear;
+  const { ncols, nrows, west, south, east, north } = meta;
+  if (lon < west || lon > east || lat < south || lat > north) return null;
+  const i0 = Math.min(
+    ncols - 1,
+    Math.max(0, Math.floor(((lon - west) / (east - west)) * ncols)),
+  );
+  const j0 = Math.min(
+    nrows - 1,
+    Math.max(0, Math.floor(((north - lat) / (north - south)) * nrows)),
+  );
+  for (let r = 0; r <= 4; r++) {
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        const i = i0 + di;
+        const j = j0 + dj;
+        if (i < 0 || j < 0 || i >= ncols || j >= nrows) continue;
+        const val = values[j * ncols + i]!;
+        if (Number.isFinite(val) && val >= 0) return val;
+      }
+    }
+  }
+  return null;
+}
