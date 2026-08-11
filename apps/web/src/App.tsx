@@ -52,6 +52,14 @@ import {
   sessionDateRange,
   type SessionSample,
 } from "./lib/sessionTrack";
+import {
+  FORECAST_RANGE_OPTIONS,
+  loadForecastRange,
+  remapHourIndex,
+  saveForecastRange,
+  sliceForecastHours,
+  type ForecastRangeHours,
+} from "./lib/forecastRange";
 import "./App.css";
 
 export default function App() {
@@ -86,6 +94,9 @@ export default function App() {
   const [units, setUnits] = useState<UnitPrefs>(() =>
     typeof window !== "undefined" ? loadUnitPrefs() : { ...DEFAULT_UNITS },
   );
+  const [forecastRange, setForecastRange] = useState<ForecastRangeHours>(() =>
+    typeof window !== "undefined" ? loadForecastRange() : 72,
+  );
 
   function updateUnits(patch: Partial<UnitPrefs>) {
     setUnits((prev) => {
@@ -93,6 +104,17 @@ export default function App() {
       saveUnitPrefs(next);
       return next;
     });
+  }
+
+  function updateForecastRange(next: ForecastRangeHours) {
+    if (next === forecastRange) return;
+    if (forecast) {
+      const prevHours = sliceForecastHours(forecast.hours, forecastRange);
+      const nextHours = sliceForecastHours(forecast.hours, next);
+      setHourIndex(remapHourIndex(prevHours, hourIndex, nextHours));
+    }
+    saveForecastRange(next);
+    setForecastRange(next);
   }
 
   useEffect(() => {
@@ -162,7 +184,8 @@ export default function App() {
           const wind = await fetchHrdpsWind(lat, lon);
           if (cancelled) return;
           setForecast(wind);
-          setHourIndex(nearestHourIndex(wind.hours));
+          const visible = sliceForecastHours(wind.hours, loadForecastRange());
+          setHourIndex(nearestHourIndex(visible));
         } catch (windErr) {
           if (!cancelled) {
             setError(`Wind forecast unavailable: ${String(windErr)}`);
@@ -180,7 +203,13 @@ export default function App() {
     };
   }, [lakeId, lakes]);
 
-  const forecastWind = forecast?.hours[hourIndex] ?? null;
+  const forecastHours = useMemo(
+    () =>
+      forecast ? sliceForecastHours(forecast.hours, forecastRange) : [],
+    [forecast, forecastRange],
+  );
+
+  const forecastWind = forecastHours[hourIndex] ?? null;
 
   async function onGpxPicked(file: File | undefined) {
     if (!file) return;
@@ -496,72 +525,97 @@ export default function App() {
       </main>
 
       <footer className="bottombar">
-        <div className="readout">
-          <strong>{spot?.identity.name ?? "—"}</strong>
-          {simOn ? (
-            <span className="sim-badge">Sim</span>
-          ) : sessionActive ? (
-            <span className="session-badge">Session</span>
-          ) : (
-            wind && <span className="muted">{timeLabel}</span>
-          )}
-          {(sessionActive || simOn) && wind && (
-            <span className="muted">{timeLabel}</span>
-          )}
-          {wind && (
-            <span>
-              {formatWind(
-                wind.windSpeedMps,
-                wind.windDirDeg,
-                wind.gustMps,
-                units.wind,
-              )}
-            </span>
-          )}
-          {wxHour && (
-            <span
-              className={
-                isThunder(wxHour.weatherCode)
-                  ? "wx-readout thunder"
-                  : undefined
-              }
-            >
-              {formatWeatherHour(wxHour.weatherCode, wxHour.precipMm)}
-            </span>
-          )}
-          {selectedHsM != null && (
-            <span>
-              {sessionActive && !simOn
-                ? "Hs at you"
-                : forecastPoint
-                  ? "Hs"
-                  : "max Hs"}{" "}
-              {formatWaveHeight(selectedHsM, units.wave)}
-            </span>
-          )}
-          {gpxTrack && (
-            <span className="muted" title={gpxTrack.filename}>
-              Track {gpxTrack.label}
-            </span>
-          )}
-          {waterTempStatus === "loading" && (
-            <span className="muted">water temp…</span>
-          )}
-          {waterTempStatus === "ready" && waterTemp && (
-            <span title={waterTemp.note}>
-              Water {formatTemp(waterTemp.tempC, units.temp)}
-              <span className="muted">
-                {" "}
-                MODIS {waterTemp.product === "LST_Night_1km" ? "night" : "day"}{" "}
-                {waterTemp.date}
+        <div className="readout-row">
+          <div className="readout">
+            <strong>{spot?.identity.name ?? "—"}</strong>
+            {simOn ? (
+              <span className="sim-badge">Sim</span>
+            ) : sessionActive ? (
+              <span className="session-badge">Session</span>
+            ) : (
+              wind && <span className="muted">{timeLabel}</span>
+            )}
+            {(sessionActive || simOn) && wind && (
+              <span className="muted">{timeLabel}</span>
+            )}
+            {wind && (
+              <span>
+                {formatWind(
+                  wind.windSpeedMps,
+                  wind.windDirDeg,
+                  wind.gustMps,
+                  units.wind,
+                )}
               </span>
-            </span>
-          )}
-          {waterTempStatus === "unavailable" && (
-            <span className="muted" title="No clear-sky MODIS LST in the last ~3 weeks">
-              Water temp unavailable
-            </span>
-          )}
+            )}
+            {wxHour && (
+              <span
+                className={
+                  isThunder(wxHour.weatherCode)
+                    ? "wx-readout thunder"
+                    : undefined
+                }
+              >
+                {formatWeatherHour(wxHour.weatherCode, wxHour.precipMm)}
+              </span>
+            )}
+            {selectedHsM != null && (
+              <span>
+                {sessionActive && !simOn
+                  ? "Hs at you"
+                  : forecastPoint
+                    ? "Hs"
+                    : "max Hs"}{" "}
+                {formatWaveHeight(selectedHsM, units.wave)}
+              </span>
+            )}
+            {gpxTrack && (
+              <span className="muted" title={gpxTrack.filename}>
+                Track {gpxTrack.label}
+              </span>
+            )}
+            {waterTempStatus === "loading" && (
+              <span className="muted">water temp…</span>
+            )}
+            {waterTempStatus === "ready" && waterTemp && (
+              <span title={waterTemp.note}>
+                Water {formatTemp(waterTemp.tempC, units.temp)}
+                <span className="muted">
+                  {" "}
+                  MODIS {waterTemp.product === "LST_Night_1km" ? "night" : "day"}{" "}
+                  {waterTemp.date}
+                </span>
+              </span>
+            )}
+            {waterTempStatus === "unavailable" && (
+              <span className="muted" title="No clear-sky MODIS LST in the last ~3 weeks">
+                Water temp unavailable
+              </span>
+            )}
+          </div>
+          <div
+            className="range-toggle"
+            role="group"
+            aria-label="Forecast range"
+            title={
+              sessionActive
+                ? "Forecast range applies after clearing the GPX session"
+                : "Forward forecast duration (always includes the past 24 hours)"
+            }
+          >
+            {FORECAST_RANGE_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={forecastRange === o.value ? "is-on" : ""}
+                aria-pressed={forecastRange === o.value}
+                disabled={sessionActive}
+                onClick={() => updateForecastRange(o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
         {sessionActive ? (
           <div className={`forecast-panel${simOn ? " is-sim" : ""}`}>
@@ -603,18 +657,17 @@ export default function App() {
             </div>
           </div>
         ) : (
-          forecast &&
-          forecast.hours.length > 0 && (
+          forecastHours.length > 0 && (
             <div className={`forecast-panel${simOn ? " is-sim" : ""}`}>
               <WindChart
-                hours={forecast.hours}
+                hours={forecastHours}
                 hourIndex={hourIndex}
                 onSelectHour={setHourIndex}
                 windUnit={units.wind}
               />
               {grids && (
                 <WaveChart
-                  hours={forecast.hours}
+                  hours={forecastHours}
                   hourIndex={hourIndex}
                   onSelectHour={setHourIndex}
                   grids={grids}
@@ -623,14 +676,14 @@ export default function App() {
                 />
               )}
               <WeatherStrip
-                hours={forecast.hours}
+                hours={forecastHours}
                 hourIndex={hourIndex}
                 onSelectHour={setHourIndex}
               />
               <div className="forecast-plot">
                 <div className="forecast-plot-rail" aria-hidden />
                 <ForecastTimeAxis
-                  times={forecast.hours.map((h) => h.time)}
+                  times={forecastHours.map((h) => h.time)}
                   hourIndex={hourIndex}
                   onSelectHour={setHourIndex}
                 />
@@ -640,9 +693,9 @@ export default function App() {
                   <button
                     type="button"
                     className="now-btn"
-                    disabled={hourIndex === nearestHourIndex(forecast.hours)}
+                    disabled={hourIndex === nearestHourIndex(forecastHours)}
                     onClick={() =>
-                      setHourIndex(nearestHourIndex(forecast.hours))
+                      setHourIndex(nearestHourIndex(forecastHours))
                     }
                   >
                     Now
@@ -650,12 +703,12 @@ export default function App() {
                 </div>
                 <div
                   className="scrubber"
-                  style={sliderInsetStyle(forecast.hours.length)}
+                  style={sliderInsetStyle(forecastHours.length)}
                 >
                   <input
                     type="range"
                     min={0}
-                    max={forecast.hours.length - 1}
+                    max={forecastHours.length - 1}
                     value={hourIndex}
                     onChange={(e) => setHourIndex(Number(e.target.value))}
                   />

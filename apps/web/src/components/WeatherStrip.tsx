@@ -9,6 +9,7 @@ import {
 import {
   formatPrecipShort,
   formatWeatherHour,
+  isNightLocalTime,
   isThunder,
   weatherKind,
   type WeatherKind,
@@ -37,12 +38,28 @@ const KIND_FILL: Record<WeatherKind, string> = {
   thunder: "#d45a12",
 };
 
+const MOON_FILL = "#7d8aa3";
+
+/** Lucide-style crescent — reliable at small strip sizes. */
+function MoonGlyph({ fill = MOON_FILL }: { fill?: string }) {
+  return (
+    <g transform="translate(0 0) scale(0.34) translate(-12 -12)">
+      <path
+        fill={fill}
+        d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+      />
+    </g>
+  );
+}
+
 function WxGlyph({
   kind,
   thunder,
+  night,
 }: {
   kind: WeatherKind;
   thunder: boolean;
+  night: boolean;
 }) {
   const fill = thunder ? KIND_FILL.thunder : KIND_FILL[kind];
   if (thunder) {
@@ -58,9 +75,23 @@ function WxGlyph({
   }
   switch (kind) {
     case "clear":
-      return <circle r="3.3" fill={fill} />;
+      return night ? (
+        <MoonGlyph />
+      ) : (
+        <circle r="3.3" fill={fill} />
+      );
     case "partly":
-      return (
+      return night ? (
+        <g>
+          <g transform="translate(-1.8,-1.6) scale(0.72)">
+            <MoonGlyph />
+          </g>
+          <path
+            d="M-3.2,0.4 C-3.1,-1.1 -1.8,-2.2 -0.3,-2.1 C0.4,-3.2 1.8,-3.7 3.1,-3.2 C4.3,-2.8 5.1,-1.6 5.0,-0.4 C6.1,-0.2 6.8,0.9 6.5,2.0 C6.2,3.1 5.1,3.8 4.0,3.7 H-1.8 C-3.1,3.7 -3.9,2.4 -3.2,0.4 Z"
+            fill={KIND_FILL.cloudy}
+          />
+        </g>
+      ) : (
         <g>
           <circle cx="-1.6" cy="-1.8" r="2.6" fill="#d9a21a" />
           <path
@@ -131,12 +162,14 @@ export function WeatherStrip({ hours, hourIndex, onSelectHour }: Props) {
       const thunder = isThunder(h.weatherCode);
       const precip = h.precipMm;
       const wet = precip >= 0.05;
+      const night = isNightLocalTime(h.time);
       return {
         i,
         x: xBar(i),
         cx: xCenter(i),
         kind: weatherKind(h.weatherCode),
         thunder,
+        night,
         precip,
         wet,
         barH: wet
@@ -229,7 +262,7 @@ export function WeatherStrip({ hours, hourIndex, onSelectHour }: Props) {
               />
             )}
             <g transform={`translate(${c.cx.toFixed(1)},${iconY}) scale(${(chart.iconSize / 12).toFixed(3)})`}>
-              <WxGlyph kind={c.kind} thunder={c.thunder} />
+              <WxGlyph kind={c.kind} thunder={c.thunder} night={c.night} />
             </g>
             {c.wet && (
               <rect

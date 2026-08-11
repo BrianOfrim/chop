@@ -27,6 +27,17 @@ export function weatherKind(code: number | null | undefined): WeatherKind {
   return "cloudy";
 }
 
+/**
+ * Night vs day for icons. Uses the hour in Open-Meteo local timestamps
+ * (`timezone=auto`, e.g. `2026-08-11T22:00`).
+ */
+export function isNightLocalTime(isoLocal: string): boolean {
+  const m = /T(\d{2})/.exec(isoLocal);
+  const hour = m ? Number(m[1]) : new Date(isoLocal).getHours();
+  if (!Number.isFinite(hour)) return false;
+  return hour < 6 || hour >= 20;
+}
+
 export function weatherLabel(code: number | null | undefined): string {
   switch (code) {
     case 0:

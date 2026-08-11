@@ -60,6 +60,7 @@ export async function fetchHrdpsWind(
   url.searchParams.set("wind_speed_unit", "ms");
   url.searchParams.set("timezone", "auto");
   url.searchParams.set("forecast_days", "7");
+  url.searchParams.set("past_days", "1");
   url.searchParams.set("models", "gem_seamless");
 
   const res = await globalThis.fetch(url);
