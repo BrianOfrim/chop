@@ -96,6 +96,213 @@ function windArrowLngLat(meta: LakeGrids["meta"]): [number, number] {
   return [meta.east + width * 0.16, midLat];
 }
 
+/** Destination lon/lat after traveling `distanceM` along compass bearing (deg from N). */
+function destinationLngLat(
+  lon: number,
+  lat: number,
+  distanceM: number,
+  bearingDeg: number,
+): [number, number] {
+  const R = 6371000;
+  const δ = distanceM / R;
+  const θ = (bearingDeg * Math.PI) / 180;
+  const φ1 = (lat * Math.PI) / 180;
+  const λ1 = (lon * Math.PI) / 180;
+  const sinφ1 = Math.sin(φ1);
+  const cosφ1 = Math.cos(φ1);
+  const sinδ = Math.sin(δ);
+  const cosδ = Math.cos(δ);
+  const φ2 = Math.asin(sinφ1 * cosδ + cosφ1 * sinδ * Math.cos(θ));
+  const λ2 =
+    λ1 +
+    Math.atan2(Math.sin(θ) * sinδ * cosφ1, cosδ - sinφ1 * Math.sin(φ2));
+  return [((λ2 * 180) / Math.PI + 540) % 360 - 180, (φ2 * 180) / Math.PI];
+}
+
+/** Nearest-neighbor water test — better for shore finding than bilinear. */
+function isWaterCell(
+  depth: Float32Array,
+  meta: LakeGrids["meta"],
+  lon: number,
+  lat: number,
+): boolean {
+  const { ncols, nrows, west, south, east, north, nodata } = meta;
+  if (lon < west || lon > east || lat < south || lat > north) return false;
+  const i = Math.min(
+    ncols - 1,
+    Math.max(0, Math.floor(((lon - west) / (east - west)) * ncols)),
+  );
+  const j = Math.min(
+    nrows - 1,
+    Math.max(0, Math.floor(((north - lat) / (north - south)) * nrows)),
+  );
+  const v = depth[j * ncols + i]!;
+  return Number.isFinite(v) && v > 0 && v !== nodata;
+}
+
+function segIntersect(
+  a: [number, number],
+  b: [number, number],
+  c: [number, number],
+  d: [number, number],
+): [number, number] | null {
+  const [x1, y1] = a;
+  const [x2, y2] = b;
+  const [x3, y3] = c;
+  const [x4, y4] = d;
+  const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(den) < 1e-15) return null;
+  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
+  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return [x1 + t * (x2 - x1), y1 + t * (y2 - y1)];
+}
+
+function ringIntersections(
+  start: [number, number],
+  end: [number, number],
+  ring: number[][],
+): [number, number][] {
+  const hits: [number, number][] = [];
+  for (let i = 0; i < ring.length - 1; i++) {
+    const a = ring[i] as [number, number];
+    const b = ring[i + 1] as [number, number];
+    const hit = segIntersect(start, end, a, b);
+    if (hit) hits.push(hit);
+  }
+  return hits;
+}
+
+function collectShoreHits(
+  start: [number, number],
+  end: [number, number],
+  shoreline: GeoJSON.FeatureCollection,
+): [number, number][] {
+  const hits: [number, number][] = [];
+  for (const f of shoreline.features) {
+    const g = f.geometry;
+    if (!g) continue;
+    if (g.type === "Polygon") {
+      for (const ring of g.coordinates) hits.push(...ringIntersections(start, end, ring));
+    } else if (g.type === "MultiPolygon") {
+      for (const poly of g.coordinates) {
+        for (const ring of poly) hits.push(...ringIntersections(start, end, ring));
+      }
+    }
+  }
+  return hits;
+}
+
+function dist2(a: [number, number], b: [number, number]): number {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  return dx * dx + dy * dy;
+}
+
+/**
+ * Walk upwind (FROM bearing) until we leave water, then snap to the
+ * shoreline polygon so the ray visually reaches the shore.
+ */
+function findUpwindShorePoint(
+  grids: LakeGrids,
+  shoreline: GeoJSON.FeatureCollection,
+  lon: number,
+  lat: number,
+  windFromDeg: number,
+): [number, number] | null {
+  const { meta, depth } = grids;
+  const step = Math.max(meta.cellSizeM * 0.2, 10);
+  const maxDist =
+    Math.hypot(meta.east - meta.west, meta.north - meta.south) * 111_320 * 1.2;
+  let lastWater: [number, number] = [lon, lat];
+  let firstLand: [number, number] | null = null;
+  let firstLandDist = 0;
+
+  for (let d = step; d <= maxDist; d += step) {
+    const p = destinationLngLat(lon, lat, d, windFromDeg);
+    if (isWaterCell(depth, meta, p[0], p[1])) {
+      lastWater = p;
+      continue;
+    }
+    firstLand = p;
+    firstLandDist = d;
+    break;
+  }
+  if (!firstLand) {
+    // Never left water on grid — fall back to far destination
+    return destinationLngLat(lon, lat, maxDist * 0.5, windFromDeg);
+  }
+
+  // Binary refine water→land transition on the depth mask
+  let lo = firstLandDist - step;
+  let hi = firstLandDist;
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    const p = destinationLngLat(lon, lat, mid, windFromDeg);
+    if (isWaterCell(depth, meta, p[0], p[1])) {
+      lo = mid;
+      lastWater = p;
+    } else {
+      hi = mid;
+      firstLand = p;
+    }
+  }
+
+  // Extend past the mask edge and intersect the shoreline geometry
+  const past = destinationLngLat(lon, lat, hi + meta.cellSizeM * 2, windFromDeg);
+  const hits = collectShoreHits([lon, lat], past, shoreline);
+  if (hits.length > 0) {
+    // Closest hit upwind of the hover point (along the ray, prefer farther from start
+    // among hits near the transition — pick the first hit along the ray)
+    hits.sort((a, b) => dist2([lon, lat], a) - dist2([lon, lat], b));
+    return hits[0]!;
+  }
+  return firstLand ?? lastWater;
+}
+
+const EMPTY_FC: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [],
+};
+
+function fetchRayGeoJSON(
+  grids: LakeGrids,
+  shoreline: GeoJSON.FeatureCollection,
+  lon: number,
+  lat: number,
+  windFromDeg: number,
+): GeoJSON.FeatureCollection {
+  const end =
+    findUpwindShorePoint(grids, shoreline, lon, lat, windFromDeg) ??
+    ([lon, lat] as [number, number]);
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: { kind: "fetch-ray" },
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [lon, lat],
+            end,
+          ],
+        },
+      },
+      {
+        type: "Feature",
+        properties: { kind: "hover" },
+        geometry: { type: "Point", coordinates: [lon, lat] },
+      },
+      {
+        type: "Feature",
+        properties: { kind: "shore" },
+        geometry: { type: "Point", coordinates: end },
+      },
+    ],
+  };
+}
+
 export function MapView({ grids, spot, shoreline, wind }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -103,10 +310,12 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
   const hsRef = useRef<Float32Array | null>(null);
   const windRef = useRef<WindHour | null>(null);
   const gridsRef = useRef(grids);
+  const shorelineRef = useRef(shoreline);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
 
   gridsRef.current = grids;
+  shorelineRef.current = shoreline;
 
   const hs = useMemo(() => {
     if (!wind) return null;
@@ -171,6 +380,44 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
           "raster-opacity": 0.92,
           "raster-resampling": "linear",
           "raster-fade-duration": 0,
+        },
+      });
+
+      map.addSource("fetch-ray", { type: "geojson", data: EMPTY_FC });
+      map.addLayer({
+        id: "fetch-ray-line",
+        type: "line",
+        source: "fetch-ray",
+        filter: ["==", ["get", "kind"], "fetch-ray"],
+        paint: {
+          "line-color": "#1c201e",
+          "line-width": 2.2,
+          "line-opacity": 0.9,
+          "line-dasharray": [1.4, 1.1],
+        },
+      });
+      map.addLayer({
+        id: "fetch-ray-points",
+        type: "circle",
+        source: "fetch-ray",
+        filter: ["in", ["get", "kind"], ["literal", ["hover", "shore"]]],
+        paint: {
+          "circle-radius": [
+            "match",
+            ["get", "kind"],
+            "hover",
+            4.5,
+            3.5,
+          ],
+          "circle-color": [
+            "match",
+            ["get", "kind"],
+            "hover",
+            "#1c201e",
+            "#f8f6f0",
+          ],
+          "circle-stroke-color": "#1c201e",
+          "circle-stroke-width": 1.5,
         },
       });
 
@@ -296,6 +543,27 @@ export function MapView({ grids, spot, shoreline, wind }: Props) {
 
     fitLake(map, meta);
   }, [grids, shoreline, ready]);
+
+  // Draw upwind fetch ray from hover point to shoreline
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource("fetch-ray") as GeoJSONSource | undefined;
+    if (!src) return;
+    if (!hover || hover.windDirDeg == null || hover.fetchM == null || hover.fetchM <= 0) {
+      src.setData(EMPTY_FC);
+      return;
+    }
+    src.setData(
+      fetchRayGeoJSON(
+        gridsRef.current,
+        shorelineRef.current,
+        hover.lon,
+        hover.lat,
+        hover.windDirDeg,
+      ),
+    );
+  }, [hover, ready]);
 
   useEffect(() => {
     const canvas = hsCanvasRef.current;
