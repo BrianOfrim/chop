@@ -27,3 +27,13 @@ export function windColorCss(
 ): string {
   return rgbaCss(windColor(mps, vmax, scale));
 }
+
+/** Opaque RGB for map icons (no alpha fade). */
+export function windColorRgb(
+  mps: number,
+  vmax: number = WIND_COLOR_MAX_MPS,
+  scale: ColorScaleId = DEFAULT_WIND_SCALE,
+): string {
+  const [r, g, b] = windColor(mps, vmax, scale);
+  return `rgb(${r},${g},${b})`;
+}

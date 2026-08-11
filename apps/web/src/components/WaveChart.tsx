@@ -6,10 +6,9 @@ import {
   CHART_PAD,
   CHART_W,
   buildDaySegs,
-  buildHourLabels,
+  buildTimeAxis,
 } from "../lib/forecastChart";
 import {
-  formatWaveHeight,
   metersToWave,
   niceWaveMax,
   waveUnitLabel,
@@ -30,9 +29,8 @@ type Props = {
 };
 
 const W = CHART_W;
-const H = 148;
-const PAD = { ...CHART_PAD, bottom: 36 };
-const BAR_GAP = 1.4;
+const H = 78;
+const PAD = CHART_PAD;
 
 function maxHsM(hs: Float32Array): number {
   let m = 0;
@@ -75,14 +73,12 @@ export function WaveChart({
     const floor = metersToWave(HS_COLOR_MAX_M * 0.5, waveUnit);
     const yMax = niceWaveMax(Math.max(peak, floor), waveUnit);
 
-    const innerW = W - PAD.left - PAD.right;
     const innerH = H - PAD.top - PAD.bottom;
     const n = hours.length;
-    const slot = innerW / n;
-    const barW = Math.max(1.8, slot - BAR_GAP);
+    const axis = buildTimeAxis(n);
+    const { slot, barW, xBar } = axis;
     const yAt = (v: number) => PAD.top + innerH * (1 - v / yMax);
     const baseline = PAD.top + innerH;
-    const xBar = (i: number) => PAD.left + i * slot + (slot - barW) / 2;
 
     const bars = maxHsMSeries.map((m, i) => {
       const v = vals[i]!;
@@ -101,67 +97,53 @@ export function WaveChart({
 
     const ticks = [0, yMax / 2, yMax];
     const times = hours.map((h) => h.time);
-    const hourLabels = buildHourLabels(times, (i) => xBar(i) + barW / 2);
     const daySegs = buildDaySegs(times);
-    const dayLabels = daySegs.map((seg) => ({
-      text: seg.text,
-      x: (xBar(seg.start) + xBar(seg.end) + barW) / 2,
-    }));
     const dayDividers = daySegs.slice(1).map((seg) => PAD.left + seg.start * slot);
-    const selectedM = bars[hourIndex]?.meters ?? null;
 
     return {
+      axis,
       bars,
       barW,
       ticks,
       yAt,
       baseline,
-      hourLabels,
-      dayLabels,
       dayDividers,
       innerH,
-      selectedM,
-      unitLabel: waveUnitLabel(waveUnit),
-      gradient: scaleGradientCss(DEFAULT_WAVE_SCALE),
     };
   }, [hours, hourIndex, maxHsMSeries, waveUnit]);
 
   if (!chart) return null;
 
   return (
-    <div className="wave-chart">
-      <div className="wind-chart-header">
-        <span className="wind-chart-title">
-          Waves
-          {chart.selectedM != null && (
-            <span className="wind-chart-hs-readout">
-              {" "}
-              · max Hs {formatWaveHeight(chart.selectedM, waveUnit)}
-            </span>
-          )}
-        </span>
-        <span className="wind-chart-legend">
-          <ColorScaleLegend
-            gradient={chart.gradient}
-            labels={[
-              waveScaleLabel(0, waveUnit),
-              waveScaleLabel(HS_COLOR_MAX_M / 2, waveUnit),
-              waveScaleLabel(HS_COLOR_MAX_M, waveUnit),
-            ]}
-            unit={waveUnitLabel(waveUnit)}
-          />
-        </span>
+    <div className="wave-chart forecast-plot">
+      <div className="forecast-plot-rail">
+        <ColorScaleLegend
+          orientation="vertical"
+          gradient={scaleGradientCss(DEFAULT_WAVE_SCALE, "vertical")}
+          labels={[
+            waveScaleLabel(0, waveUnit),
+            waveScaleLabel(HS_COLOR_MAX_M / 2, waveUnit),
+            waveScaleLabel(HS_COLOR_MAX_M, waveUnit),
+          ]}
+          unit={waveUnitLabel(waveUnit)}
+        />
+        <span className="forecast-plot-title">Waves</span>
       </div>
       <svg
         className="wind-chart-svg"
         viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMinYMid meet"
         role="img"
         aria-label="Maximum lake wave height over the forecast period"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
-          const frac = (e.clientX - rect.left) / rect.width;
-          const idx = Math.round(frac * (hours.length - 1));
-          onSelectHour(Math.max(0, Math.min(hours.length - 1, idx)));
+          onSelectHour(
+            chart.axis.indexFromClientX(
+              e.clientX - rect.left,
+              rect.width,
+              hours.length,
+            ),
+          );
         }}
       >
         {chart.dayDividers.map((x) => (
@@ -173,17 +155,6 @@ export function WaveChart({
             y2={chart.baseline}
             className="wind-chart-day-div"
           />
-        ))}
-        {chart.dayLabels.map((d) => (
-          <text
-            key={`d-${d.text}-${d.x}`}
-            x={d.x}
-            y={14}
-            className="wind-chart-day-top"
-            textAnchor="middle"
-          >
-            {d.text}
-          </text>
         ))}
         {chart.ticks.map((v) => (
           <g key={`tick-${v}`}>
@@ -204,14 +175,6 @@ export function WaveChart({
             </text>
           </g>
         ))}
-        <text
-          x={10}
-          y={PAD.top - 8}
-          className="wind-chart-axis-label hs"
-          textAnchor="start"
-        >
-          {chart.unitLabel}
-        </text>
         {chart.bars[hourIndex] && (
           <rect
             x={chart.bars[hourIndex]!.x - 0.6}
@@ -240,17 +203,6 @@ export function WaveChart({
           y2={chart.baseline}
           className="wind-chart-baseline"
         />
-        {chart.hourLabels.map((h) => (
-          <text
-            key={`h-${h.text}-${h.x}`}
-            x={h.x}
-            y={H - 8}
-            className="wind-chart-hour"
-            textAnchor="middle"
-          >
-            {h.text}
-          </text>
-        ))}
       </svg>
     </div>
   );

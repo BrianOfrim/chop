@@ -37,7 +37,7 @@ function parseGemHours(data: GemHourlyResponse): WindHour[] {
   }));
 }
 
-/** Open-Meteo GEM HRDPS continental (~2.5 km) — upcoming forecast. */
+/** GEM blend: HRDPS (~2.5 km) for ~48 h, then RDPS / global out to 7 days. */
 export async function fetchHrdpsWind(
   lat: number,
   lon: number,
@@ -51,13 +51,13 @@ export async function fetchHrdpsWind(
   );
   url.searchParams.set("wind_speed_unit", "ms");
   url.searchParams.set("timezone", "auto");
-  url.searchParams.set("forecast_days", "2");
-  url.searchParams.set("models", "gem_hrdps_continental");
+  url.searchParams.set("forecast_days", "7");
+  url.searchParams.set("models", "gem_seamless");
 
   const res = await globalThis.fetch(url);
   if (!res.ok) throw new Error(`Open-Meteo error ${res.status}`);
   const data = (await res.json()) as GemHourlyResponse;
-  return { model: "gem_hrdps_continental", hours: parseGemHours(data) };
+  return { model: "gem_seamless", hours: parseGemHours(data) };
 }
 
 /**
@@ -90,6 +90,23 @@ export async function fetchHrdpsWindForDate(
     throw new Error(`No HRDPS hours returned for ${date}`);
   }
   return { model: "gem_hrdps_continental", hours, date };
+}
+
+/** Hour closest to `atMs` (default now). */
+export function nearestHourIndex(
+  hours: WindHour[],
+  atMs: number = Date.now(),
+): number {
+  let best = 0;
+  let bestDiff = Infinity;
+  hours.forEach((h, i) => {
+    const d = Math.abs(new Date(h.time).getTime() - atMs);
+    if (d < bestDiff) {
+      bestDiff = d;
+      best = i;
+    }
+  });
+  return best;
 }
 
 /** Index of the strongest wind hour (for a useful default scrubber position). */

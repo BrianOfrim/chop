@@ -120,8 +120,17 @@ export function sampleRgba(
   return [r, g, b, Math.round(alphaAt0 + (alphaAt1 - alphaAt0) * t)];
 }
 
-export function scaleGradientCss(scale: ColorScaleId): string {
+export function scaleGradientCss(
+  scale: ColorScaleId,
+  dir: "horizontal" | "vertical" = "horizontal",
+): string {
   const stops = COLOR_SCALES[scale].stops;
+  if (dir === "vertical") {
+    const parts = [...stops]
+      .reverse()
+      .map(([t, r, g, b]) => `rgb(${r}, ${g}, ${b}) ${((1 - t) * 100).toFixed(0)}%`);
+    return `linear-gradient(180deg, ${parts.join(", ")})`;
+  }
   const parts = stops.map(
     ([t, r, g, b]) => `rgb(${r}, ${g}, ${b}) ${(t * 100).toFixed(0)}%`,
   );

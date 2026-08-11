@@ -2,13 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { MapView } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
 import { WaveChart } from "./components/WaveChart";
+import { ForecastTimeAxis } from "./components/ForecastTimeAxis";
 import {
   loadLakeGrids,
   loadLakeIndex,
   type LakeIndexEntry,
   type SpotProfile,
 } from "./lib/lakeAssets";
-import { fetchHrdpsWind, formatWind, type WindForecast } from "./lib/wind";
+import {
+  fetchHrdpsWind,
+  formatWind,
+  nearestHourIndex,
+  type WindForecast,
+} from "./lib/wind";
 import {
   fetchLakeSurfaceTemp,
   type LakeSurfaceTemp,
@@ -19,6 +25,7 @@ import {
   WAVE_UNIT_OPTIONS,
   WIND_UNIT_OPTIONS,
   formatTemp,
+  formatWaveHeight,
   loadUnitPrefs,
   saveUnitPrefs,
   type TempUnit,
@@ -26,7 +33,8 @@ import {
   type WaveHeightUnit,
   type WindSpeedUnit,
 } from "./lib/units";
-import type { LakeGrids } from "@chop/wave-engine";
+import { computeHsGrid, type LakeGrids } from "@chop/wave-engine";
+import { sliderInsetStyle } from "./lib/forecastChart";
 import "./App.css";
 
 export default function App() {
@@ -117,17 +125,7 @@ export default function App() {
           const wind = await fetchHrdpsWind(lat, lon);
           if (cancelled) return;
           setForecast(wind);
-          const now = Date.now();
-          let best = 0;
-          let bestDiff = Infinity;
-          wind.hours.forEach((h, i) => {
-            const d = Math.abs(new Date(h.time).getTime() - now);
-            if (d < bestDiff) {
-              bestDiff = d;
-              best = i;
-            }
-          });
-          setHourIndex(best);
+          setHourIndex(nearestHourIndex(wind.hours));
         } catch (windErr) {
           if (!cancelled) {
             setError(`Wind forecast unavailable: ${String(windErr)}`);
@@ -146,6 +144,17 @@ export default function App() {
   }, [lakeId, lakes]);
 
   const wind = forecast?.hours[hourIndex] ?? null;
+
+  const selectedMaxHsM = useMemo(() => {
+    if (!grids || !wind) return null;
+    const hs = computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
+    let m = 0;
+    for (let i = 0; i < hs.length; i++) {
+      const v = hs[i]!;
+      if (Number.isFinite(v) && v > m) m = v;
+    }
+    return m;
+  }, [grids, wind]);
 
   const timeLabel = useMemo(() => {
     if (!wind) return "";
@@ -241,25 +250,24 @@ export default function App() {
             units={units}
           />
         )}
-
       </main>
 
       <footer className="bottombar">
         <div className="readout">
           <strong>{spot?.identity.name ?? "—"}</strong>
+          {wind && <span className="muted">{timeLabel}</span>}
           {wind && (
-            <>
-              <span>
-                {formatWind(
-                  wind.windSpeedMps,
-                  wind.windDirDeg,
-                  wind.gustMps,
-                  units.wind,
-                )}
-              </span>
-              <span className="muted">{timeLabel}</span>
-              <span className="muted">model {forecast?.model}</span>
-            </>
+            <span>
+              {formatWind(
+                wind.windSpeedMps,
+                wind.windDirDeg,
+                wind.gustMps,
+                units.wind,
+              )}
+            </span>
+          )}
+          {selectedMaxHsM != null && (
+            <span>max Hs {formatWaveHeight(selectedMaxHsM, units.wave)}</span>
           )}
           {waterTempStatus === "loading" && (
             <span className="muted">water temp…</span>
@@ -297,14 +305,37 @@ export default function App() {
                 waveUnit={units.wave}
               />
             )}
-            <div className="scrubber">
-              <input
-                type="range"
-                min={0}
-                max={forecast.hours.length - 1}
-                value={hourIndex}
-                onChange={(e) => setHourIndex(Number(e.target.value))}
+            <div className="forecast-plot">
+              <div className="forecast-plot-rail" aria-hidden />
+              <ForecastTimeAxis
+                times={forecast.hours.map((h) => h.time)}
+                hourIndex={hourIndex}
+                onSelectHour={setHourIndex}
               />
+            </div>
+            <div className="forecast-plot scrubber-row">
+              <div className="forecast-plot-rail scrubber-rail">
+                <button
+                  type="button"
+                  className="now-btn"
+                  disabled={hourIndex === nearestHourIndex(forecast.hours)}
+                  onClick={() => setHourIndex(nearestHourIndex(forecast.hours))}
+                >
+                  Now
+                </button>
+              </div>
+              <div
+                className="scrubber"
+                style={sliderInsetStyle(forecast.hours.length)}
+              >
+                <input
+                  type="range"
+                  min={0}
+                  max={forecast.hours.length - 1}
+                  value={hourIndex}
+                  onChange={(e) => setHourIndex(Number(e.target.value))}
+                />
+              </div>
             </div>
           </div>
         )}

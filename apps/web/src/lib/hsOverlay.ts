@@ -53,8 +53,9 @@ export function makeArrowIcon(size = 64): {
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, size, size);
   ctx.translate(size / 2, size / 2);
-  ctx.fillStyle = "rgba(28, 32, 30, 0.92)";
-  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  // White SDF silhouette — MapLibre tints via icon-color.
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(0, -size * 0.4);

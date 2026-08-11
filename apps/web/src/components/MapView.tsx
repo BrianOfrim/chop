@@ -16,7 +16,13 @@ import {
 } from "@chop/wave-engine";
 import type { SpotProfile } from "../lib/lakeAssets";
 import { hsToImageData, makeArrowIcon, HS_COLOR_MAX_M } from "../lib/hsOverlay";
+import {
+  buildShoreMaskCanvas,
+  hsCanvasSize,
+  paintHsClipped,
+} from "../lib/shoreMask";
 import { formatWind, formatWindMapLabel, type WindHour } from "../lib/wind";
+import { windColorRgb } from "../lib/windScale";
 import {
   formatWaveHeight,
   type UnitPrefs,
@@ -85,14 +91,53 @@ function hsCoordinates(meta: LakeGrids["meta"]): [
   ];
 }
 
-function fitLake(map: MapLibreMap, meta: LakeGrids["meta"]) {
-  map.fitBounds(
-    [
-      [meta.west, meta.south],
-      [meta.east, meta.north],
-    ],
-    { padding: { top: 56, bottom: 56, left: 56, right: 96 }, duration: 700, maxZoom: 12.5 },
-  );
+function walkCoords(coords: unknown, acc: { w: number; s: number; e: number; n: number }) {
+  if (!Array.isArray(coords)) return;
+  if (typeof coords[0] === "number" && typeof coords[1] === "number") {
+    acc.w = Math.min(acc.w, coords[0]);
+    acc.e = Math.max(acc.e, coords[0]);
+    acc.s = Math.min(acc.s, coords[1]);
+    acc.n = Math.max(acc.n, coords[1]);
+    return;
+  }
+  for (const c of coords) walkCoords(c, acc);
+}
+
+function lakeBounds(
+  meta: LakeGrids["meta"],
+  shoreline: GeoJSON.FeatureCollection,
+): [[number, number], [number, number]] {
+  const acc = { w: meta.west, s: meta.south, e: meta.east, n: meta.north };
+  for (const f of shoreline.features) {
+    if (f.geometry) walkCoords(f.geometry.coordinates, acc);
+  }
+  return [
+    [acc.w, acc.s],
+    [acc.e, acc.n],
+  ];
+}
+
+function fitLake(
+  map: MapLibreMap,
+  meta: LakeGrids["meta"],
+  shoreline: GeoJSON.FeatureCollection,
+  duration = 0,
+) {
+  const canvas = map.getCanvas();
+  if (canvas.clientWidth < 8 || canvas.clientHeight < 8) return;
+  map.fitBounds(lakeBounds(meta, shoreline), {
+    padding: { top: 48, bottom: 80, left: 72, right: 72 },
+    duration,
+    maxZoom: 13,
+  });
+}
+
+const WIND_LABEL_PX = 18;
+
+/** Keep the speed label below the 128px arrow icon at any zoom / rotation. */
+function windLabelOffsetEms(zoom: number): [number, number] {
+  const iconSize = 0.85 * 2 ** (zoom - 11);
+  return [0, (64 * iconSize) / WIND_LABEL_PX + 0.55];
 }
 
 /** Place the wind arrow just east of the lake so it does not cover the Hs field. */
@@ -313,10 +358,12 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const hsCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const shoreMaskRef = useRef<HTMLCanvasElement | null>(null);
   const hsRef = useRef<Float32Array | null>(null);
   const windRef = useRef<WindHour | null>(null);
   const gridsRef = useRef(grids);
   const shorelineRef = useRef(shoreline);
+  const userMovedRef = useRef(false);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -369,9 +416,11 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
       });
 
       const canvas = document.createElement("canvas");
-      canvas.width = meta.ncols;
-      canvas.height = meta.nrows;
+      const size = hsCanvasSize(meta);
+      canvas.width = size.width;
+      canvas.height = size.height;
       hsCanvasRef.current = canvas;
+      shoreMaskRef.current = buildShoreMaskCanvas(meta, shoreline);
       map.addSource("hs", {
         type: "canvas",
         canvas,
@@ -428,7 +477,7 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
       });
 
       if (!map.hasImage("wind-arrow")) {
-        map.addImage("wind-arrow", makeArrowIcon(128));
+        map.addImage("wind-arrow", makeArrowIcon(128), { sdf: true });
       }
 
       map.addSource("wind-dir", {
@@ -461,21 +510,28 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
           "icon-allow-overlap": true,
           "icon-ignore-placement": true,
           "text-field": ["get", "label"],
-          "text-size": 12,
-          "text-offset": [0, 1.65],
+          "text-size": WIND_LABEL_PX,
           "text-anchor": "top",
+          "text-offset": windLabelOffsetEms(map.getZoom()),
           "text-allow-overlap": true,
           "text-ignore-placement": true,
         },
         paint: {
-          "text-color": "#1c201e",
+          "icon-color": ["get", "color"],
+          "icon-halo-color": "rgba(255,255,255,0.92)",
+          "icon-halo-width": 1.4,
+          "text-color": ["get", "color"],
           "text-halo-color": "rgba(255,255,255,0.92)",
-          "text-halo-width": 1.4,
+          "text-halo-width": 1.8,
         },
       });
 
-      fitLake(map, meta);
+      fitLake(map, meta, shoreline, 0);
       setReady(true);
+    });
+
+    map.on("movestart", (e) => {
+      if (e.originalEvent) userMovedRef.current = true;
     });
 
     map.on("mousemove", (e: MapMouseEvent) => {
@@ -517,11 +573,26 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
 
     map.on("mouseout", () => setHover(null));
 
-    const onResize = () => map.resize();
+    const syncWindLabelOffset = () => {
+      if (!map.getLayer("wind-dir")) return;
+      map.setLayoutProperty("wind-dir", "text-offset", windLabelOffsetEms(map.getZoom()));
+    };
+    map.on("zoom", syncWindLabelOffset);
+
+    const refitIfNeeded = () => {
+      map.resize();
+      if (!userMovedRef.current) {
+        fitLake(map, gridsRef.current.meta, shorelineRef.current, 0);
+      }
+    };
+    const onResize = () => refitIfNeeded();
     window.addEventListener("resize", onResize);
+    const ro = new ResizeObserver(refitIfNeeded);
+    ro.observe(containerRef.current);
 
     return () => {
       window.removeEventListener("resize", onResize);
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
       hsCanvasRef.current = null;
@@ -540,14 +611,17 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
     shoreSrc?.setData(shoreline);
 
     const { meta } = grids;
-    if (canvas.width !== meta.ncols || canvas.height !== meta.nrows) {
-      canvas.width = meta.ncols;
-      canvas.height = meta.nrows;
+    const size = hsCanvasSize(meta);
+    if (canvas.width !== size.width || canvas.height !== size.height) {
+      canvas.width = size.width;
+      canvas.height = size.height;
     }
+    shoreMaskRef.current = buildShoreMaskCanvas(meta, shoreline);
     const hsSrc = map.getSource("hs") as CanvasSource | undefined;
     hsSrc?.setCoordinates(hsCoordinates(meta));
 
-    fitLake(map, meta);
+    userMovedRef.current = false;
+    fitLake(map, meta, shoreline, 0);
   }, [grids, shoreline, ready]);
 
   // Draw upwind fetch ray from hover point to shoreline
@@ -576,11 +650,21 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
     if (!ready || !hs || !canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    if (canvas.width !== grids.meta.ncols || canvas.height !== grids.meta.nrows) {
-      canvas.width = grids.meta.ncols;
-      canvas.height = grids.meta.nrows;
+    const size = hsCanvasSize(grids.meta);
+    if (canvas.width !== size.width || canvas.height !== size.height) {
+      canvas.width = size.width;
+      canvas.height = size.height;
     }
-    ctx.putImageData(hsToImageData(hs, grids.meta, vmax, DEFAULT_WAVE_SCALE), 0, 0);
+    let mask = shoreMaskRef.current;
+    if (!mask || mask.width !== size.width || mask.height !== size.height) {
+      mask = buildShoreMaskCanvas(grids.meta, shorelineRef.current);
+      shoreMaskRef.current = mask;
+    }
+    paintHsClipped(
+      ctx,
+      hsToImageData(hs, grids.meta, vmax, DEFAULT_WAVE_SCALE),
+      mask,
+    );
   }, [hs, ready, grids.meta, vmax]);
 
   useEffect(() => {
@@ -602,6 +686,7 @@ export function MapView({ grids, spot, shoreline, wind, units }: Props) {
           properties: {
             bearing: toBearing,
             label: formatWindMapLabel(wind.windSpeedMps, wind.gustMps, units.wind),
+            color: windColorRgb(wind.windSpeedMps),
           },
           geometry: {
             type: "Point",

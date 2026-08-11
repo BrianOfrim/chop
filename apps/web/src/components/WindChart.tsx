@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import type { WindHour } from "../lib/wind";
 import {
-  CHART_PAD,
   CHART_W,
+  CHART_WIND_PAD,
   buildDaySegs,
-  buildHourLabels,
+  buildTimeAxis,
 } from "../lib/forecastChart";
 import {
   mpsToWind,
@@ -26,10 +26,9 @@ type Props = {
   windUnit: WindSpeedUnit;
 };
 
-const H = 168;
-const PAD = { ...CHART_PAD, right: 28 };
+const H = 92;
+const PAD = CHART_WIND_PAD;
 const GUST_CAP_H = 2.8;
-const BAR_GAP = 1.4;
 const DIR_BAND = 14;
 const W = CHART_W;
 
@@ -74,17 +73,15 @@ export function WindChart({ hours, hourIndex, onSelectHour, windUnit }: Props) {
     );
     const yMax = niceWindMax(maxVal, windUnit);
 
-    const innerW = W - PAD.left - PAD.right;
     const innerH = H - PAD.top - PAD.bottom;
     const n = hours.length;
-    const slot = innerW / n;
-    const barW = Math.max(1.8, slot - BAR_GAP);
+    const axis = buildTimeAxis(n);
+    const { slot, barW, xBar } = axis;
     const dirEvery = slot < 5 ? 3 : slot < 8 ? 2 : 1;
 
     const yAt = (v: number) => PAD.top + innerH * (1 - v / yMax);
     const baseline = PAD.top + innerH;
     const dirY = baseline + DIR_BAND * 0.55;
-    const xBar = (i: number) => PAD.left + i * slot + (slot - barW) / 2;
     const gustGap = windUnit === "mps" ? 0.15 : 0.5;
 
     const bars = hours.map((h, i) => {
@@ -121,65 +118,56 @@ export function WindChart({ hours, hourIndex, onSelectHour, windUnit }: Props) {
 
     const ticks = [0, yMax / 2, yMax];
     const times = hours.map((h) => h.time);
-    const hourLabels = buildHourLabels(times, (i) => xBar(i) + barW / 2);
     const daySegs = buildDaySegs(times);
-    const dayLabels = daySegs.map((seg) => ({
-      text: seg.text,
-      x: (xBar(seg.start) + xBar(seg.end) + barW) / 2,
-    }));
     const dayDividers = daySegs.slice(1).map((seg) => PAD.left + seg.start * slot);
     const tickDigits = windUnit === "mps" ? 1 : 0;
 
     return {
+      axis,
       bars,
       barW,
       ticks,
       yAt,
       baseline,
       dirY,
-      hourLabels,
-      dayLabels,
       dayDividers,
       innerH,
-      unitLabel: windUnitLabel(windUnit),
       tickDigits,
-      gradient: scaleGradientCss(DEFAULT_WIND_SCALE),
     };
   }, [hours, hourIndex, windUnit]);
 
   if (!chart) return null;
 
   return (
-    <div className="wind-chart">
-      <div className="wind-chart-header">
-        <span className="wind-chart-title">Wind</span>
-        <span className="wind-chart-legend">
-          <ColorScaleLegend
-            gradient={chart.gradient}
-            labels={[
-              windScaleLabel(0, windUnit),
-              windScaleLabel(WIND_COLOR_MAX_MPS / 2, windUnit),
-              windScaleLabel(WIND_COLOR_MAX_MPS, windUnit),
-            ]}
-            unit={windUnitLabel(windUnit)}
-          />
-          <span className="swatch gust-cap" /> Gust
-          <span className="swatch wind-dir" aria-hidden>
-            ▲
-          </span>{" "}
-          To
-        </span>
+    <div className="wind-chart forecast-plot">
+      <div className="forecast-plot-rail">
+        <ColorScaleLegend
+          orientation="vertical"
+          gradient={scaleGradientCss(DEFAULT_WIND_SCALE, "vertical")}
+          labels={[
+            windScaleLabel(0, windUnit),
+            windScaleLabel(WIND_COLOR_MAX_MPS / 2, windUnit),
+            windScaleLabel(WIND_COLOR_MAX_MPS, windUnit),
+          ]}
+          unit={windUnitLabel(windUnit)}
+        />
+        <span className="forecast-plot-title">Wind</span>
       </div>
       <svg
         className="wind-chart-svg"
         viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMinYMid meet"
         role="img"
         aria-label="Wind speed, gust, and direction over the forecast period"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
-          const frac = (e.clientX - rect.left) / rect.width;
-          const idx = Math.round(frac * (hours.length - 1));
-          onSelectHour(Math.max(0, Math.min(hours.length - 1, idx)));
+          onSelectHour(
+            chart.axis.indexFromClientX(
+              e.clientX - rect.left,
+              rect.width,
+              hours.length,
+            ),
+          );
         }}
       >
         {chart.dayDividers.map((x) => (
@@ -191,17 +179,6 @@ export function WindChart({ hours, hourIndex, onSelectHour, windUnit }: Props) {
             y2={chart.baseline + DIR_BAND}
             className="wind-chart-day-div"
           />
-        ))}
-        {chart.dayLabels.map((d) => (
-          <text
-            key={`d-${d.text}-${d.x}`}
-            x={d.x}
-            y={14}
-            className="wind-chart-day-top"
-            textAnchor="middle"
-          >
-            {d.text}
-          </text>
         ))}
         {chart.ticks.map((v) => (
           <g key={`tick-${v}`}>
@@ -222,14 +199,6 @@ export function WindChart({ hours, hourIndex, onSelectHour, windUnit }: Props) {
             </text>
           </g>
         ))}
-        <text
-          x={10}
-          y={PAD.top - 8}
-          className="wind-chart-axis-label"
-          textAnchor="start"
-        >
-          {chart.unitLabel}
-        </text>
         {chart.bars[hourIndex] && (
           <rect
             x={chart.bars[hourIndex]!.x - 0.6}
@@ -281,17 +250,6 @@ export function WindChart({ hours, hourIndex, onSelectHour, windUnit }: Props) {
               selected={b.selected}
             />
           ))}
-        {chart.hourLabels.map((h) => (
-          <text
-            key={`h-${h.text}-${h.x}`}
-            x={h.x}
-            y={H - 8}
-            className="wind-chart-hour"
-            textAnchor="middle"
-          >
-            {h.text}
-          </text>
-        ))}
       </svg>
     </div>
   );
