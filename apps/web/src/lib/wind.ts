@@ -69,6 +69,40 @@ export async function fetchHrdpsWind(
 }
 
 /**
+ * Historical HRDPS via Open-Meteo GEM for an inclusive calendar range
+ * (`YYYY-MM-DD`, interpreted with `timezone=auto`).
+ */
+export async function fetchHrdpsWindRange(
+  lat: number,
+  lon: number,
+  startDate: string,
+  endDate: string,
+): Promise<WindForecast> {
+  const url = new URL("https://api.open-meteo.com/v1/gem");
+  url.searchParams.set("latitude", String(lat));
+  url.searchParams.set("longitude", String(lon));
+  url.searchParams.set("hourly", GEM_HOURLY);
+  url.searchParams.set("wind_speed_unit", "ms");
+  url.searchParams.set("timezone", "auto");
+  url.searchParams.set("start_date", startDate);
+  url.searchParams.set("end_date", endDate);
+  url.searchParams.set("models", "gem_hrdps_continental");
+
+  const res = await globalThis.fetch(url);
+  if (!res.ok) throw new Error(`Open-Meteo error ${res.status}`);
+  const data = (await res.json()) as GemHourlyResponse;
+  const hours = parseGemHours(data);
+  if (hours.length === 0) {
+    throw new Error(`No HRDPS hours returned for ${startDate}–${endDate}`);
+  }
+  return {
+    model: "gem_hrdps_continental",
+    hours,
+    date: startDate === endDate ? startDate : `${startDate}/${endDate}`,
+  };
+}
+
+/**
  * Historical / past-day HRDPS via Open-Meteo GEM (start_date / end_date).
  * @param date ISO calendar day, e.g. "2026-08-02"
  */
@@ -77,24 +111,7 @@ export async function fetchHrdpsWindForDate(
   lon: number,
   date: string,
 ): Promise<WindForecast> {
-  const url = new URL("https://api.open-meteo.com/v1/gem");
-  url.searchParams.set("latitude", String(lat));
-  url.searchParams.set("longitude", String(lon));
-  url.searchParams.set("hourly", GEM_HOURLY);
-  url.searchParams.set("wind_speed_unit", "ms");
-  url.searchParams.set("timezone", "auto");
-  url.searchParams.set("start_date", date);
-  url.searchParams.set("end_date", date);
-  url.searchParams.set("models", "gem_hrdps_continental");
-
-  const res = await globalThis.fetch(url);
-  if (!res.ok) throw new Error(`Open-Meteo error ${res.status}`);
-  const data = (await res.json()) as GemHourlyResponse;
-  const hours = parseGemHours(data);
-  if (hours.length === 0) {
-    throw new Error(`No HRDPS hours returned for ${date}`);
-  }
-  return { model: "gem_hrdps_continental", hours, date };
+  return fetchHrdpsWindRange(lat, lon, date, date);
 }
 
 /** Hour closest to `atMs` (default now). */

@@ -29,6 +29,7 @@ import {
   type UnitPrefs,
 } from "../lib/units";
 import { DEFAULT_WAVE_SCALE, scaleGradientCss } from "../lib/colorScales";
+import type { GpxTrack } from "../lib/gpx";
 
 type Props = {
   grids: LakeGrids;
@@ -38,6 +39,9 @@ type Props = {
   units: UnitPrefs;
   simulating?: boolean;
   forecastPoint?: ForecastPoint | null;
+  gpxTrack?: GpxTrack | null;
+  /** Moving cursor along an uploaded track (session scrubber). */
+  gpxCursor?: { lon: number; lat: number } | null;
   onChoosePoint?: (point: ForecastPoint) => void;
   onClearPoint?: () => void;
 };
@@ -439,6 +443,8 @@ export function MapView({
   units,
   simulating = false,
   forecastPoint = null,
+  gpxTrack = null,
+  gpxCursor = null,
   onChoosePoint,
   onClearPoint,
 }: Props) {
@@ -640,6 +646,85 @@ export function MapView({
           "text-color": ["get", "color"],
           "text-halo-color": "rgba(255,255,255,0.92)",
           "text-halo-width": 1.8,
+        },
+      });
+
+      map.addSource("gpx-track", { type: "geojson", data: EMPTY_FC });
+      map.addLayer({
+        id: "gpx-track-casing",
+        type: "line",
+        source: "gpx-track",
+        filter: ["in", ["get", "kind"], ["literal", ["track", "route"]]],
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#f8f6f0",
+          "line-width": 6.5,
+          "line-opacity": 0.95,
+        },
+      });
+      map.addLayer({
+        id: "gpx-track-line",
+        type: "line",
+        source: "gpx-track",
+        filter: ["in", ["get", "kind"], ["literal", ["track", "route"]]],
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#c45c1a",
+          "line-width": 3.2,
+          "line-opacity": 0.95,
+        },
+      });
+      map.addLayer({
+        id: "gpx-track-ends",
+        type: "circle",
+        source: "gpx-track",
+        filter: ["in", ["get", "kind"], ["literal", ["start", "end"]]],
+        paint: {
+          "circle-radius": [
+            "match",
+            ["get", "kind"],
+            "start",
+            5.5,
+            4.5,
+          ],
+          "circle-color": [
+            "match",
+            ["get", "kind"],
+            "start",
+            "#1f6f78",
+            "#c45c1a",
+          ],
+          "circle-stroke-color": "#f8f6f0",
+          "circle-stroke-width": 2,
+        },
+      });
+
+      map.addSource("gpx-cursor", { type: "geojson", data: EMPTY_FC });
+      map.addLayer({
+        id: "gpx-cursor-halo",
+        type: "circle",
+        source: "gpx-cursor",
+        paint: {
+          "circle-radius": 10,
+          "circle-color": "#f8f6f0",
+          "circle-opacity": 0.92,
+          "circle-stroke-color": "#1c201e",
+          "circle-stroke-width": 1.5,
+        },
+      });
+      map.addLayer({
+        id: "gpx-cursor-dot",
+        type: "circle",
+        source: "gpx-cursor",
+        paint: {
+          "circle-radius": 4.5,
+          "circle-color": "#c45c1a",
         },
       });
 
@@ -854,6 +939,58 @@ export function MapView({
     });
   }, [forecastPoint, ready]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource("gpx-track") as GeoJSONSource | undefined;
+    if (!src) return;
+    if (!gpxTrack) {
+      src.setData(EMPTY_FC);
+      return;
+    }
+    src.setData(gpxTrack.geojson);
+    const { west, south, east, north } = gpxTrack.bounds;
+    if (
+      Number.isFinite(west) &&
+      Number.isFinite(south) &&
+      Number.isFinite(east) &&
+      Number.isFinite(north)
+    ) {
+      userMovedRef.current = true;
+      map.fitBounds(
+        [
+          [west, south],
+          [east, north],
+        ],
+        { padding: 56, maxZoom: 14, duration: 650 },
+      );
+    }
+  }, [gpxTrack, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource("gpx-cursor") as GeoJSONSource | undefined;
+    if (!src) return;
+    if (!gpxCursor) {
+      src.setData(EMPTY_FC);
+      return;
+    }
+    src.setData({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Point",
+            coordinates: [gpxCursor.lon, gpxCursor.lat],
+          },
+        },
+      ],
+    });
+  }, [gpxCursor, ready]);
+
   return (
     <div className="map-wrap">
       <div ref={containerRef} className="map" />
@@ -888,7 +1025,9 @@ export function MapView({
         <p className="legend-note">
           {simulating
             ? "SMB fetch-limited + depth cap. Wind: simulator."
-            : "SMB fetch-limited + depth cap. Wind: HRDPS."}
+            : gpxCursor
+              ? "SMB fetch-limited + depth cap. Wind: HRDPS (session)."
+              : "SMB fetch-limited + depth cap. Wind: HRDPS."}
         </p>
         {forecastPoint ? (
           <button type="button" className="legend-pin-btn" onClick={() => onClearPoint?.()}>

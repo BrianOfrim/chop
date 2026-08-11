@@ -61,6 +61,47 @@
   color: var(--ink);
 }
 
+.gpx-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.gpx-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gpx-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gpx-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.gpx-name {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .unit-prefs {
   display: flex;
   flex-wrap: wrap;
@@ -831,6 +872,62 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.session-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(196, 92, 26, 0.14);
+  color: #a04814;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.session-wave-area {
+  fill: rgba(15, 107, 92, 0.12);
+}
+
+.session-wave-line {
+  fill: none;
+  stroke: #0f6b5c;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.session-wind-area {
+  fill: rgba(31, 111, 120, 0.1);
+}
+
+.session-wind-line {
+  fill: none;
+  stroke: #1f6f78;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.session-wind-gust-line {
+  fill: none;
+  stroke: rgba(28, 36, 32, 0.45);
+  stroke-width: 1.4;
+  stroke-dasharray: 3 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.session-wave-dot {
+  stroke: #fff;
+  stroke-width: 1;
+}
+
+.session-wave-dot.selected {
+  stroke: #1c201e;
+  stroke-width: 1.4;
 }
 
 .forecast-panel.is-sim {

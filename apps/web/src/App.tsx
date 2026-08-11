@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MapView } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
 import { WaveChart, type ForecastPoint } from "./components/WaveChart";
@@ -12,6 +12,7 @@ import {
 } from "./lib/lakeAssets";
 import {
   fetchHrdpsWind,
+  fetchHrdpsWindRange,
   formatWind,
   nearestHourIndex,
   type WindForecast,
@@ -42,7 +43,15 @@ import {
 } from "@chop/wave-engine";
 import { sliderInsetStyle } from "./lib/forecastChart";
 import { WindSimPanel } from "./components/WindSimPanel";
+import { SessionWaveChart } from "./components/SessionWaveChart";
+import { SessionWindChart } from "./components/SessionWindChart";
 import { formatWeatherHour, isThunder } from "./lib/weather";
+import { parseGpxFile, type GpxTrack } from "./lib/gpx";
+import {
+  buildSessionSeries,
+  sessionDateRange,
+  type SessionSample,
+} from "./lib/sessionTrack";
 import "./App.css";
 
 export default function App() {
@@ -63,6 +72,15 @@ export default function App() {
   const [simOn, setSimOn] = useState(false);
   const [simSpeedMps, setSimSpeedMps] = useState(8);
   const [simDirDeg, setSimDirDeg] = useState(270);
+  const [gpxTrack, setGpxTrack] = useState<GpxTrack | null>(null);
+  const [gpxError, setGpxError] = useState<string | null>(null);
+  const [sessionHours, setSessionHours] = useState<WindHour[] | null>(null);
+  const [sessionSamples, setSessionSamples] = useState<SessionSample[]>([]);
+  const [sessionIndex, setSessionIndex] = useState(0);
+  const [sessionStatus, setSessionStatus] = useState<
+    "idle" | "loading" | "ready" | "no-time" | "error"
+  >("idle");
+  const gpxInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [units, setUnits] = useState<UnitPrefs>(() =>
@@ -97,6 +115,12 @@ export default function App() {
     setSpot(null);
     setShoreline(null);
     setForecastPoint(null);
+    setGpxTrack(null);
+    setGpxError(null);
+    setSessionHours(null);
+    setSessionSamples([]);
+    setSessionIndex(0);
+    setSessionStatus("idle");
     (async () => {
       try {
         const loaded = await loadLakeGrids(entry.path);
@@ -158,10 +182,116 @@ export default function App() {
 
   const forecastWind = forecast?.hours[hourIndex] ?? null;
 
+  async function onGpxPicked(file: File | undefined) {
+    if (!file) return;
+    setGpxError(null);
+    setSessionHours(null);
+    setSessionSamples([]);
+    setSessionIndex(0);
+    setSessionStatus("idle");
+    setSimOn(false);
+    try {
+      const track = await parseGpxFile(file);
+      setGpxTrack(track);
+      if (!track.startTime || !track.endTime) {
+        setSessionStatus("no-time");
+        setGpxError(
+          "Track has no timestamps — path only. Export a timed GPX to replay conditions.",
+        );
+      }
+    } catch (e) {
+      setGpxTrack(null);
+      setSessionStatus("idle");
+      setGpxError(e instanceof Error ? e.message : String(e));
+    }
+    if (gpxInputRef.current) gpxInputRef.current.value = "";
+  }
+
+  function clearGpx() {
+    setGpxTrack(null);
+    setGpxError(null);
+    setSessionHours(null);
+    setSessionSamples([]);
+    setSessionIndex(0);
+    setSessionStatus("idle");
+    if (gpxInputRef.current) gpxInputRef.current.value = "";
+  }
+
+  // Load historical HRDPS for the GPX session window
+  useEffect(() => {
+    if (!gpxTrack || !spot) return;
+    const range = sessionDateRange(gpxTrack);
+    if (!range) return;
+
+    let cancelled = false;
+    setSessionStatus("loading");
+    setSessionHours(null);
+    setSessionSamples([]);
+
+    const proxy =
+      spot.proxyPoints.find(
+        (p) =>
+          p.role === "background_model_point" ||
+          p.role === "open_water_model_point",
+      ) ?? spot.proxyPoints[0];
+    const lat = proxy?.latitude ?? spot.identity.latitude;
+    const lon = proxy?.longitude ?? spot.identity.longitude;
+
+    (async () => {
+      try {
+        const hist = await fetchHrdpsWindRange(
+          lat,
+          lon,
+          range.startDate,
+          range.endDate,
+        );
+        if (cancelled) return;
+        setSessionHours(hist.hours);
+        setSessionStatus("ready");
+      } catch (e) {
+        if (cancelled) return;
+        setSessionHours(null);
+        setSessionStatus("error");
+        setGpxError(
+          `Session wind unavailable: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gpxTrack, spot]);
+
+  // Build along-track Hs series once grids + historical hours are ready
+  useEffect(() => {
+    if (!gpxTrack || !grids || !sessionHours || sessionHours.length === 0) {
+      setSessionSamples([]);
+      return;
+    }
+    const samples = buildSessionSeries(gpxTrack, sessionHours, grids);
+    setSessionSamples(samples);
+    setSessionIndex(0);
+    if (samples.length === 0) {
+      setSessionStatus("no-time");
+      setGpxError(
+        "Track has no usable timestamps — path only. Export a timed GPX to replay conditions.",
+      );
+    }
+  }, [gpxTrack, grids, sessionHours]);
+
+  const sessionActive = sessionSamples.length > 0;
+  const sessionSample = sessionActive
+    ? sessionSamples[Math.min(sessionIndex, sessionSamples.length - 1)] ?? null
+    : null;
+
   function enableSim(on: boolean) {
-    if (on && !simOn && forecastWind) {
-      setSimSpeedMps(forecastWind.windSpeedMps);
-      setSimDirDeg(forecastWind.windDirDeg);
+    if (on && !simOn) {
+      const src = sessionSample?.wind ?? forecastWind;
+      if (src) {
+        setSimSpeedMps(src.windSpeedMps);
+        setSimDirDeg(src.windDirDeg);
+      }
     }
     setSimOn(on);
   }
@@ -178,9 +308,14 @@ export default function App() {
     [simSpeedMps, simDirDeg],
   );
 
-  const wind = simOn ? simWind : forecastWind;
+  const wind = simOn
+    ? simWind
+    : sessionSample
+      ? sessionSample.wind
+      : forecastWind;
 
   const selectedHsM = useMemo(() => {
+    if (sessionSample && !simOn) return sessionSample.hsM;
     if (!grids || !wind) return null;
     const hs = computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
     if (forecastPoint) {
@@ -197,10 +332,19 @@ export default function App() {
       if (Number.isFinite(v) && v > m) m = v;
     }
     return m;
-  }, [grids, wind, forecastPoint]);
+  }, [grids, wind, forecastPoint, sessionSample, simOn]);
 
   const timeLabel = useMemo(() => {
-    if (!wind) return "";
+    if (sessionSample && !simOn) {
+      return new Date(sessionSample.time).toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+    if (!wind || wind.time === "sim") return "";
     return new Date(wind.time).toLocaleString(undefined, {
       weekday: "short",
       month: "short",
@@ -208,7 +352,13 @@ export default function App() {
       hour: "numeric",
       minute: "2-digit",
     });
-  }, [wind]);
+  }, [wind, sessionSample, simOn]);
+
+  const wxHour = simOn
+    ? null
+    : sessionSample
+      ? sessionSample.wind
+      : forecastWind;
 
   return (
     <div className="app">
@@ -231,6 +381,33 @@ export default function App() {
             ))}
           </select>
         </label>
+        <div className="gpx-picker">
+          <input
+            ref={gpxInputRef}
+            type="file"
+            accept=".gpx,application/gpx+xml,text/xml,application/xml"
+            className="gpx-input"
+            onChange={(e) => void onGpxPicked(e.target.files?.[0])}
+          />
+          {gpxTrack ? (
+            <>
+              <span className="gpx-name" title={gpxTrack.filename}>
+                {gpxTrack.label}
+              </span>
+              <button type="button" className="gpx-btn" onClick={clearGpx}>
+                Clear track
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="gpx-btn"
+              onClick={() => gpxInputRef.current?.click()}
+            >
+              Upload GPX
+            </button>
+          )}
+        </div>
         <div className="unit-prefs" title="Display units">
           <label className="unit-picker">
             Wind
@@ -282,7 +459,11 @@ export default function App() {
 
       <main className="main">
         {error && <div className="banner error">{error}</div>}
+        {gpxError && <div className="banner error">{gpxError}</div>}
         {loading && <div className="banner">Loading lake & HRDPS wind…</div>}
+        {sessionStatus === "loading" && (
+          <div className="banner">Loading HRDPS wind for session…</div>
+        )}
         {grids && spot && shoreline && (
           <MapView
             key={lakeId}
@@ -293,6 +474,12 @@ export default function App() {
             units={units}
             simulating={simOn}
             forecastPoint={forecastPoint}
+            gpxTrack={gpxTrack}
+            gpxCursor={
+              sessionSample && !simOn
+                ? { lon: sessionSample.lon, lat: sessionSample.lat }
+                : null
+            }
             onChoosePoint={setForecastPoint}
             onClearPoint={() => setForecastPoint(null)}
           />
@@ -313,8 +500,13 @@ export default function App() {
           <strong>{spot?.identity.name ?? "—"}</strong>
           {simOn ? (
             <span className="sim-badge">Sim</span>
+          ) : sessionActive ? (
+            <span className="session-badge">Session</span>
           ) : (
             wind && <span className="muted">{timeLabel}</span>
+          )}
+          {(sessionActive || simOn) && wind && (
+            <span className="muted">{timeLabel}</span>
           )}
           {wind && (
             <span>
@@ -326,24 +518,30 @@ export default function App() {
               )}
             </span>
           )}
-          {!simOn && forecastWind && (
+          {wxHour && (
             <span
               className={
-                isThunder(forecastWind.weatherCode)
+                isThunder(wxHour.weatherCode)
                   ? "wx-readout thunder"
                   : undefined
               }
             >
-              {formatWeatherHour(
-                forecastWind.weatherCode,
-                forecastWind.precipMm,
-              )}
+              {formatWeatherHour(wxHour.weatherCode, wxHour.precipMm)}
             </span>
           )}
           {selectedHsM != null && (
             <span>
-              {forecastPoint ? "Hs" : "max Hs"}{" "}
+              {sessionActive && !simOn
+                ? "Hs at you"
+                : forecastPoint
+                  ? "Hs"
+                  : "max Hs"}{" "}
               {formatWaveHeight(selectedHsM, units.wave)}
+            </span>
+          )}
+          {gpxTrack && (
+            <span className="muted" title={gpxTrack.filename}>
+              Track {gpxTrack.label}
             </span>
           )}
           {waterTempStatus === "loading" && (
@@ -365,62 +563,106 @@ export default function App() {
             </span>
           )}
         </div>
-        {forecast && forecast.hours.length > 0 && (
+        {sessionActive ? (
           <div className={`forecast-panel${simOn ? " is-sim" : ""}`}>
-            <WindChart
-              hours={forecast.hours}
-              hourIndex={hourIndex}
-              onSelectHour={setHourIndex}
+            <SessionWindChart
+              samples={sessionSamples}
+              sampleIndex={sessionIndex}
+              onSelectSample={setSessionIndex}
               windUnit={units.wind}
             />
-            {grids && (
-              <WaveChart
-                hours={forecast.hours}
-                hourIndex={hourIndex}
-                onSelectHour={setHourIndex}
-                grids={grids}
-                waveUnit={units.wave}
-                sampleAt={forecastPoint}
-              />
-            )}
-            <WeatherStrip
-              hours={forecast.hours}
-              hourIndex={hourIndex}
-              onSelectHour={setHourIndex}
+            <SessionWaveChart
+              samples={sessionSamples}
+              sampleIndex={sessionIndex}
+              onSelectSample={setSessionIndex}
+              waveUnit={units.wave}
             />
-            <div className="forecast-plot">
-              <div className="forecast-plot-rail" aria-hidden />
-              <ForecastTimeAxis
-                times={forecast.hours.map((h) => h.time)}
-                hourIndex={hourIndex}
-                onSelectHour={setHourIndex}
-              />
-            </div>
             <div className="forecast-plot scrubber-row">
               <div className="forecast-plot-rail scrubber-rail">
                 <button
                   type="button"
                   className="now-btn"
-                  disabled={hourIndex === nearestHourIndex(forecast.hours)}
-                  onClick={() => setHourIndex(nearestHourIndex(forecast.hours))}
+                  disabled={sessionIndex === 0}
+                  onClick={() => setSessionIndex(0)}
                 >
-                  Now
+                  Start
                 </button>
               </div>
               <div
                 className="scrubber"
-                style={sliderInsetStyle(forecast.hours.length)}
+                style={sliderInsetStyle(sessionSamples.length)}
               >
                 <input
                   type="range"
                   min={0}
-                  max={forecast.hours.length - 1}
-                  value={hourIndex}
-                  onChange={(e) => setHourIndex(Number(e.target.value))}
+                  max={sessionSamples.length - 1}
+                  value={sessionIndex}
+                  onChange={(e) => setSessionIndex(Number(e.target.value))}
                 />
               </div>
             </div>
           </div>
+        ) : (
+          forecast &&
+          forecast.hours.length > 0 && (
+            <div className={`forecast-panel${simOn ? " is-sim" : ""}`}>
+              <WindChart
+                hours={forecast.hours}
+                hourIndex={hourIndex}
+                onSelectHour={setHourIndex}
+                windUnit={units.wind}
+              />
+              {grids && (
+                <WaveChart
+                  hours={forecast.hours}
+                  hourIndex={hourIndex}
+                  onSelectHour={setHourIndex}
+                  grids={grids}
+                  waveUnit={units.wave}
+                  sampleAt={forecastPoint}
+                />
+              )}
+              <WeatherStrip
+                hours={forecast.hours}
+                hourIndex={hourIndex}
+                onSelectHour={setHourIndex}
+              />
+              <div className="forecast-plot">
+                <div className="forecast-plot-rail" aria-hidden />
+                <ForecastTimeAxis
+                  times={forecast.hours.map((h) => h.time)}
+                  hourIndex={hourIndex}
+                  onSelectHour={setHourIndex}
+                />
+              </div>
+              <div className="forecast-plot scrubber-row">
+                <div className="forecast-plot-rail scrubber-rail">
+                  <button
+                    type="button"
+                    className="now-btn"
+                    disabled={hourIndex === nearestHourIndex(forecast.hours)}
+                    onClick={() =>
+                      setHourIndex(nearestHourIndex(forecast.hours))
+                    }
+                  >
+                    Now
+                  </button>
+                </div>
+                <div
+                  className="scrubber"
+                  style={sliderInsetStyle(forecast.hours.length)}
+                >
+                  <input
+                    type="range"
+                    min={0}
+                    max={forecast.hours.length - 1}
+                    value={hourIndex}
+                    onChange={(e) => setHourIndex(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+            </div>
+          )
         )}
       </footer>
     </div>
