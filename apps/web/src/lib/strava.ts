@@ -81,6 +81,7 @@ export type StravaTrackPayload = {
   startDate: string;
   latlng: [number, number][];
   timeOffsetsSec: number[];
+  velocityMps?: Array<number | null>;
 };
 
 export const WATERSPORT_TYPES = new Set([

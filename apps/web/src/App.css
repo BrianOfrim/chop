@@ -411,6 +411,14 @@
   justify-self: start;
 }
 
+.forecast-plot-unit {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1;
+  justify-self: start;
+}
+
 .wind-chart {
   width: 100%;
 }
@@ -1031,6 +1039,61 @@
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
+}
+
+.session-speed-area {
+  fill: rgba(160, 72, 20, 0.12);
+}
+
+.session-speed-line {
+  fill: none;
+  stroke: #a04814;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.session-speed-dot {
+  fill: #a04814;
+  stroke: #fff;
+  stroke-width: 1;
+}
+
+.session-speed-dot.selected {
+  stroke: #1c201e;
+  stroke-width: 1.4;
+}
+
+.session-point-reach {
+  stroke: rgba(28, 36, 32, 0.45);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 2.5;
+}
+
+.session-point-line {
+  fill: none;
+  stroke: #5c4a78;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.session-point-dot {
+  stroke: #fff;
+  stroke-width: 1;
+}
+
+.session-point-dot.upwind {
+  fill: #1f6f78;
+}
+
+.session-point-dot.downwind {
+  fill: #a04814;
+}
+
+.session-point-dot.selected {
+  stroke: #1c201e;
+  stroke-width: 1.4;
 }
 
 .session-wind-gust-line {

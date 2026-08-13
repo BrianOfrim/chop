@@ -6,6 +6,8 @@ export type GpxPoint = {
   /** ISO timestamp when present on the point. */
   time: string | null;
   timeMs: number | null;
+  /** Ground speed m/s when known (Strava velocity stream). */
+  speedMps?: number | null;
 };
 
 export type GpxTrack = {

@@ -21,6 +21,8 @@ export type StravaTrackPayload = {
   startDate: string;
   latlng: [number, number][];
   timeOffsetsSec: number[];
+  /** Ground speed m/s from Strava `velocity_smooth`, aligned to latlng. */
+  velocityMps: Array<number | null>;
 };
 
 type StravaActivity = {
@@ -43,6 +45,7 @@ type StreamSeries = {
 type StreamsByType = {
   latlng?: StreamSeries;
   time?: StreamSeries;
+  velocity_smooth?: StreamSeries;
 };
 
 function pairOrNull(value: unknown): { lat: number; lon: number } | null {
@@ -89,13 +92,23 @@ function asTimeOffsets(data: unknown[] | undefined): number[] {
   return data.map((v) => Number(v)).filter((n) => Number.isFinite(n));
 }
 
+function asVelocity(data: unknown[] | undefined, n: number): Array<number | null> {
+  const out: Array<number | null> = Array.from({ length: n }, () => null);
+  if (!data) return out;
+  for (let i = 0; i < Math.min(n, data.length); i++) {
+    const v = Number(data[i]);
+    out[i] = Number.isFinite(v) && v >= 0 ? v : null;
+  }
+  return out;
+}
+
 export async function fetchActivityTrack(
   id: number,
 ): Promise<StravaTrackPayload> {
   const [activity, streams] = await Promise.all([
     stravaGet<StravaActivity>(`/activities/${id}`),
     stravaGet<StreamsByType>(
-      `/activities/${id}/streams?keys=latlng,time&key_by_type=true`,
+      `/activities/${id}/streams?keys=latlng,time,velocity_smooth&key_by_type=true`,
     ),
   ]);
 
@@ -116,5 +129,6 @@ export async function fetchActivityTrack(
       timeOffsetsSec.length === latlng.length
         ? timeOffsetsSec
         : timeOffsetsSec.slice(0, latlng.length),
+    velocityMps: asVelocity(streams.velocity_smooth?.data, latlng.length),
   };
 }

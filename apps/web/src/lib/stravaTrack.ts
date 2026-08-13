@@ -30,11 +30,17 @@ export function gpxTrackFromStrava(payload: StravaTrackPayload): GpxTrack {
       Number.isFinite(startMs) && offsetSec != null && Number.isFinite(offsetSec)
         ? startMs + offsetSec * 1000
         : null;
+    const rawSpeed = payload.velocityMps?.[i];
+    const speedMps =
+      rawSpeed != null && Number.isFinite(rawSpeed) && rawSpeed >= 0
+        ? rawSpeed
+        : null;
     points.push({
       lon,
       lat,
       time: timeMs != null ? new Date(timeMs).toISOString() : null,
       timeMs,
+      speedMps,
     });
   }
 

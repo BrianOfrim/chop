@@ -42,7 +42,10 @@ type Props = {
   forecastPoint?: ForecastPoint | null;
   gpxTrack?: GpxTrack | null;
   /** Moving cursor along an uploaded track (session scrubber). */
-  gpxCursor?: { lon: number; lat: number } | null;
+  gpxCursor?: { lon: number; lat: number; headingDeg?: number | null } | null;
+  /** Session points with HRDPS FROM direction, for perpendicular wind ticks. */
+  gpxWindTicks?: Array<{ lon: number; lat: number; windDirDeg: number }> | null;
+  gpxWindTickIndex?: number | null;
   onChoosePoint?: (point: ForecastPoint) => void;
   onClearPoint?: () => void;
 };
@@ -398,6 +401,75 @@ const EMPTY_FC: GeoJSON.FeatureCollection = {
   features: [],
 };
 
+const PERP_TICK_HALF_M = 90;
+const PERP_TICK_ACTIVE_HALF_M = 150;
+const TRAVEL_SHAFT_M = 130;
+
+function perpTickCoords(
+  lon: number,
+  lat: number,
+  windFromDeg: number,
+  halfM: number,
+): [number, number][] {
+  const a = destinationLngLat(lon, lat, halfM, windFromDeg - 90);
+  const b = destinationLngLat(lon, lat, halfM, windFromDeg + 90);
+  return [a, b];
+}
+
+function travelArrowGeoJSON(
+  lon: number,
+  lat: number,
+  headingDeg: number,
+): GeoJSON.FeatureCollection {
+  const tip = destinationLngLat(lon, lat, TRAVEL_SHAFT_M, headingDeg);
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: { kind: "travel-shaft" },
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [lon, lat],
+            tip,
+          ],
+        },
+      },
+      {
+        type: "Feature",
+        properties: { kind: "travel-head", bearing: headingDeg },
+        geometry: { type: "Point", coordinates: tip },
+      },
+    ],
+  };
+}
+
+function windPerpTicksGeoJSON(
+  ticks: Array<{ lon: number; lat: number; windDirDeg: number }>,
+  activeIndex: number | null,
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: ticks.map((t, i) => {
+      const active = activeIndex != null && i === activeIndex;
+      return {
+        type: "Feature" as const,
+        properties: { kind: active ? "perp-active" : "perp" },
+        geometry: {
+          type: "LineString" as const,
+          coordinates: perpTickCoords(
+            t.lon,
+            t.lat,
+            t.windDirDeg,
+            active ? PERP_TICK_ACTIVE_HALF_M : PERP_TICK_HALF_M,
+          ),
+        },
+      };
+    }),
+  };
+}
+
 function fetchRayGeoJSON(
   grids: LakeGrids,
   shoreline: GeoJSON.FeatureCollection,
@@ -447,6 +519,8 @@ export function MapView({
   forecastPoint = null,
   gpxTrack = null,
   gpxCursor = null,
+  gpxWindTicks = null,
+  gpxWindTickIndex = null,
   onChoosePoint,
   onClearPoint,
 }: Props) {
@@ -707,6 +781,40 @@ export function MapView({
         },
       });
 
+      map.addSource("gpx-wind-perp", { type: "geojson", data: EMPTY_FC });
+      map.addLayer({
+        id: "gpx-wind-perp",
+        type: "line",
+        source: "gpx-wind-perp",
+        filter: ["==", ["get", "kind"], "perp"],
+        layout: {
+          "line-cap": "butt",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#1f6f78",
+          "line-width": 1.35,
+          "line-dasharray": [0.7, 1.35],
+          "line-opacity": 0.55,
+        },
+      });
+      map.addLayer({
+        id: "gpx-wind-perp-active",
+        type: "line",
+        source: "gpx-wind-perp",
+        filter: ["==", ["get", "kind"], "perp-active"],
+        layout: {
+          "line-cap": "butt",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#1f6f78",
+          "line-width": 2.1,
+          "line-dasharray": [1, 1.15],
+          "line-opacity": 0.95,
+        },
+      });
+
       map.addSource("gpx-cursor", { type: "geojson", data: EMPTY_FC });
       map.addLayer({
         id: "gpx-cursor-halo",
@@ -727,6 +835,43 @@ export function MapView({
         paint: {
           "circle-radius": 4.5,
           "circle-color": "#c45c1a",
+        },
+      });
+
+      map.addSource("gpx-travel", { type: "geojson", data: EMPTY_FC });
+      map.addLayer({
+        id: "gpx-travel-shaft",
+        type: "line",
+        source: "gpx-travel",
+        filter: ["==", ["get", "kind"], "travel-shaft"],
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#c45c1a",
+          "line-width": 2.4,
+          "line-opacity": 0.95,
+        },
+      });
+      map.addLayer({
+        id: "gpx-travel-head",
+        type: "symbol",
+        source: "gpx-travel",
+        filter: ["==", ["get", "kind"], "travel-head"],
+        layout: {
+          "icon-image": "wind-arrow",
+          "icon-size": 0.22,
+          "icon-rotate": ["get", "bearing"],
+          "icon-rotation-alignment": "map",
+          "icon-pitch-alignment": "map",
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+        paint: {
+          "icon-color": "#c45c1a",
+          "icon-halo-color": "rgba(248, 246, 240, 0.95)",
+          "icon-halo-width": 1.6,
         },
       });
 
@@ -973,9 +1118,11 @@ export function MapView({
     const map = mapRef.current;
     if (!map || !ready) return;
     const src = map.getSource("gpx-cursor") as GeoJSONSource | undefined;
+    const travelSrc = map.getSource("gpx-travel") as GeoJSONSource | undefined;
     if (!src) return;
     if (!gpxCursor) {
       src.setData(EMPTY_FC);
+      travelSrc?.setData(EMPTY_FC);
       return;
     }
     src.setData({
@@ -991,7 +1138,31 @@ export function MapView({
         },
       ],
     });
+    const heading = gpxCursor.headingDeg;
+    if (
+      travelSrc &&
+      heading != null &&
+      Number.isFinite(heading)
+    ) {
+      travelSrc.setData(
+        travelArrowGeoJSON(gpxCursor.lon, gpxCursor.lat, heading),
+      );
+    } else {
+      travelSrc?.setData(EMPTY_FC);
+    }
   }, [gpxCursor, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource("gpx-wind-perp") as GeoJSONSource | undefined;
+    if (!src) return;
+    if (!gpxWindTicks || gpxWindTicks.length === 0) {
+      src.setData(EMPTY_FC);
+      return;
+    }
+    src.setData(windPerpTicksGeoJSON(gpxWindTicks, gpxWindTickIndex ?? null));
+  }, [gpxWindTicks, gpxWindTickIndex, ready]);
 
   return (
     <div className="map-wrap">

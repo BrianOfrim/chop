@@ -45,14 +45,20 @@ import { sliderInsetStyle } from "./lib/forecastChart";
 import { WindSimPanel } from "./components/WindSimPanel";
 import { SessionWaveChart } from "./components/SessionWaveChart";
 import { SessionWindChart } from "./components/SessionWindChart";
+import {
+  SessionSpeedChart,
+  sessionSpeedLabel,
+} from "./components/SessionSpeedChart";
 import { formatWeatherHour, isThunder } from "./lib/weather";
 import { parseGpxFile, type GpxTrack } from "./lib/gpx";
 import { StravaPanel } from "./components/StravaPanel";
 import {
   buildSessionSeries,
   sessionDateRange,
+  sessionPointLabel,
   type SessionSample,
 } from "./lib/sessionTrack";
+import { SessionPointChart } from "./components/SessionPointChart";
 import {
   FORECAST_RANGE_OPTIONS,
   loadForecastRange,
@@ -400,6 +406,11 @@ export default function App() {
   const sessionSample = reviewActive
     ? sessionSamples[Math.min(sessionIndex, sessionSamples.length - 1)] ?? null
     : null;
+  const reviewSpeedLabel = sessionSpeedLabel(
+    sessionSample?.speedMps,
+    units.wind,
+  );
+  const reviewPointLabel = sessionPointLabel(sessionSample?.pointDeg);
 
   function changeMode(next: WindMode) {
     if (next === "sim" && mode !== "sim") {
@@ -507,6 +518,16 @@ export default function App() {
         : null,
     [grids],
   );
+  const reviewWindTicks = useMemo(() => {
+    if (mode !== "review" || !sessionSample) return null;
+    return [
+      {
+        lon: sessionSample.lon,
+        lat: sessionSample.lat,
+        windDirDeg: sessionSample.wind.windDirDeg,
+      },
+    ];
+  }, [mode, sessionSample]);
 
   return (
     <div className="app">
@@ -605,9 +626,15 @@ export default function App() {
             gpxTrack={mode === "review" ? gpxTrack : null}
             gpxCursor={
               mode === "review" && sessionSample
-                ? { lon: sessionSample.lon, lat: sessionSample.lat }
+                ? {
+                    lon: sessionSample.lon,
+                    lat: sessionSample.lat,
+                    headingDeg: sessionSample.headingDeg,
+                  }
                 : null
             }
+            gpxWindTicks={reviewWindTicks}
+            gpxWindTickIndex={reviewWindTicks ? 0 : null}
             onChoosePoint={setForecastPoint}
             onClearPoint={() => setForecastPoint(null)}
           />
@@ -715,6 +742,8 @@ export default function App() {
                 {formatWaveHeight(selectedHsM, units.wave)}
               </span>
             )}
+            {reviewSpeedLabel && <span>Speed {reviewSpeedLabel}</span>}
+            {reviewPointLabel && <span>{reviewPointLabel}</span>}
             {mode === "review" && gpxTrack && (
               <span className="muted" title={gpxTrack.filename}>
                 Track {gpxTrack.label}
@@ -770,6 +799,17 @@ export default function App() {
               sampleIndex={sessionIndex}
               onSelectSample={setSessionIndex}
               windUnit={units.wind}
+            />
+            <SessionSpeedChart
+              samples={sessionSamples}
+              sampleIndex={sessionIndex}
+              onSelectSample={setSessionIndex}
+              windUnit={units.wind}
+            />
+            <SessionPointChart
+              samples={sessionSamples}
+              sampleIndex={sessionIndex}
+              onSelectSample={setSessionIndex}
             />
             <SessionWaveChart
               samples={sessionSamples}
