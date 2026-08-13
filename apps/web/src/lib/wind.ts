@@ -20,8 +20,8 @@ export type WindForecast = {
 type GemHourlyResponse = {
   hourly?: {
     time?: string[];
-    wind_speed_10m?: number[];
-    wind_direction_10m?: number[];
+    wind_speed_10m?: Array<number | null>;
+    wind_direction_10m?: Array<number | null>;
     wind_gusts_10m?: Array<number | null>;
     weather_code?: Array<number | null>;
     precipitation?: Array<number | null>;
@@ -31,21 +31,32 @@ type GemHourlyResponse = {
 const GEM_HOURLY =
   "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,precipitation";
 
+/** Open-Meteo historical-forecast host (full HRDPS archive, not the ~2 month live GEM cache). */
+const HISTORICAL_FORECAST_URL =
+  "https://historical-forecast-api.open-meteo.com/v1/forecast";
+
 function parseGemHours(data: GemHourlyResponse): WindHour[] {
   const t: string[] = data.hourly?.time ?? [];
-  const spd: number[] = data.hourly?.wind_speed_10m ?? [];
-  const dir: number[] = data.hourly?.wind_direction_10m ?? [];
+  const spd: Array<number | null> = data.hourly?.wind_speed_10m ?? [];
+  const dir: Array<number | null> = data.hourly?.wind_direction_10m ?? [];
   const gust: Array<number | null> = data.hourly?.wind_gusts_10m ?? [];
   const code: Array<number | null> = data.hourly?.weather_code ?? [];
   const precip: Array<number | null> = data.hourly?.precipitation ?? [];
-  return t.map((time, i) => ({
-    time,
-    windSpeedMps: spd[i] ?? 0,
-    windDirDeg: dir[i] ?? 0,
-    gustMps: gust[i] ?? null,
-    weatherCode: code[i] ?? null,
-    precipMm: precip[i] ?? 0,
-  }));
+  const hours: WindHour[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const windSpeedMps = spd[i];
+    const windDirDeg = dir[i];
+    if (windSpeedMps == null || windDirDeg == null) continue;
+    hours.push({
+      time: t[i]!,
+      windSpeedMps,
+      windDirDeg,
+      gustMps: gust[i] ?? null,
+      weatherCode: code[i] ?? null,
+      precipMm: precip[i] ?? 0,
+    });
+  }
+  return hours;
 }
 
 /** GEM blend: HRDPS (~2.5 km) for ~48 h, then RDPS / global out to 7 days. */
@@ -70,8 +81,9 @@ export async function fetchHrdpsWind(
 }
 
 /**
- * Historical HRDPS via Open-Meteo GEM for an inclusive calendar range
- * (`YYYY-MM-DD`, interpreted with `timezone=auto`).
+ * Historical HRDPS via Open-Meteo Historical Forecast API for an inclusive
+ * calendar range (`YYYY-MM-DD`, interpreted with `timezone=auto`).
+ * The live `/v1/gem` endpoint only keeps ~2 months of HRDPS.
  */
 export async function fetchHrdpsWindRange(
   lat: number,
@@ -79,7 +91,7 @@ export async function fetchHrdpsWindRange(
   startDate: string,
   endDate: string,
 ): Promise<WindForecast> {
-  const url = new URL("https://api.open-meteo.com/v1/gem");
+  const url = new URL(HISTORICAL_FORECAST_URL);
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("longitude", String(lon));
   url.searchParams.set("hourly", GEM_HOURLY);

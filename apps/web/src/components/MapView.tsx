@@ -38,6 +38,7 @@ type Props = {
   wind: WindHour | null;
   units: UnitPrefs;
   simulating?: boolean;
+  historic?: boolean;
   forecastPoint?: ForecastPoint | null;
   gpxTrack?: GpxTrack | null;
   /** Moving cursor along an uploaded track (session scrubber). */
@@ -442,6 +443,7 @@ export function MapView({
   wind,
   units,
   simulating = false,
+  historic = false,
   forecastPoint = null,
   gpxTrack = null,
   gpxCursor = null,
@@ -1027,7 +1029,9 @@ export function MapView({
             ? "SMB fetch-limited + depth cap. Wind: simulator."
             : gpxCursor
               ? "SMB fetch-limited + depth cap. Wind: HRDPS (session)."
-              : "SMB fetch-limited + depth cap. Wind: HRDPS."}
+              : historic
+                ? "SMB fetch-limited + depth cap. Wind: HRDPS (history)."
+                : "SMB fetch-limited + depth cap. Wind: HRDPS."}
         </p>
         {forecastPoint ? (
           <button type="button" className="legend-pin-btn" onClick={() => onClearPoint?.()}>

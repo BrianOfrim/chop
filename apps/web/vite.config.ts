@@ -20,5 +20,11 @@ export default defineConfig({
     fs: {
       allow: [repoRoot],
     },
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8787",
+        changeOrigin: true,
+      },
+    },
   },
 });

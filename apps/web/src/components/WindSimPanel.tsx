@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, type ReactNode } from "react";
 import { cardinalFromDeg } from "../lib/wind";
 import {
   formatWindSpeed,
@@ -7,15 +7,27 @@ import {
   type WindSpeedUnit,
 } from "../lib/units";
 import { WIND_COLOR_MAX_MPS } from "../lib/windScale";
+import type { WindMode } from "../lib/historyRange";
+import { HISTORY_DAYS, HISTORY_VIEW_DAYS } from "../lib/historyRange";
 
 type Props = {
-  active: boolean;
-  onActiveChange: (on: boolean) => void;
+  mode: WindMode;
+  onModeChange: (mode: WindMode) => void;
   speedMps: number;
   dirDeg: number;
   onSpeedMps: (mps: number) => void;
   onDirDeg: (deg: number) => void;
   windUnit: WindSpeedUnit;
+  historyStatus?: "idle" | "loading" | "ready" | "error";
+  historyOffsetDays?: number;
+  historyLabel?: string;
+  onHistoryBack?: () => void;
+  onHistoryForward?: () => void;
+  canHistoryBack?: boolean;
+  canHistoryForward?: boolean;
+  reviewStatus?: "idle" | "loading" | "ready" | "no-time" | "error";
+  reviewLabel?: string;
+  reviewToolbar?: ReactNode;
 };
 
 function eventFromDeg(el: SVGSVGElement, clientX: number, clientY: number): number {
@@ -27,13 +39,23 @@ function eventFromDeg(el: SVGSVGElement, clientX: number, clientY: number): numb
 }
 
 export function WindSimPanel({
-  active,
-  onActiveChange,
+  mode,
+  onModeChange,
   speedMps,
   dirDeg,
   onSpeedMps,
   onDirDeg,
   windUnit,
+  historyStatus = "idle",
+  historyOffsetDays = 0,
+  historyLabel = "",
+  onHistoryBack,
+  onHistoryForward,
+  canHistoryBack = false,
+  canHistoryForward = false,
+  reviewStatus = "idle",
+  reviewLabel = "",
+  reviewToolbar,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const dragging = useRef(false);
@@ -54,29 +76,96 @@ export function WindSimPanel({
   );
 
   return (
-    <div className={`sim-panel${active ? " is-on" : ""}`}>
+    <div className={`sim-panel${mode !== "forecast" ? " is-on" : ""}`}>
       <div className="sim-tabs" role="tablist" aria-label="Wind source">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={!active}
-          className={!active ? "is-on" : ""}
-          onClick={() => onActiveChange(false)}
-        >
-          Forecast
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={active}
-          className={active ? "is-on" : ""}
-          onClick={() => onActiveChange(true)}
-        >
-          Sim
-        </button>
+        {(
+          [
+            ["forecast", "Forecast"],
+            ["history", "History"],
+            ["review", "Review"],
+            ["sim", "Sim"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={mode === id}
+            className={mode === id ? "is-on" : ""}
+            onClick={() => onModeChange(id)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {active && (
+      {mode === "history" && (
+        <div className="sim-body">
+          <p className="sim-lead">
+            {historyStatus === "loading"
+              ? `Loading last ${HISTORY_DAYS} days of HRDPS…`
+              : historyStatus === "error"
+                ? "Could not load historical wind."
+                : `${HISTORY_VIEW_DAYS}-day window · last ${HISTORY_DAYS} days`}
+          </p>
+          {historyStatus === "ready" && (
+            <div className="history-nav">
+              <button
+                type="button"
+                className="history-nav-btn"
+                disabled={!canHistoryBack}
+                onClick={onHistoryBack}
+                aria-label="Older period"
+              >
+                ←
+              </button>
+              <span className="history-nav-label" title={`Offset ${historyOffsetDays}d`}>
+                {historyLabel}
+              </span>
+              <button
+                type="button"
+                className="history-nav-btn"
+                disabled={!canHistoryForward}
+                onClick={onHistoryForward}
+                aria-label="Newer period"
+              >
+                →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === "review" && (
+        <div className="sim-body">
+          {reviewToolbar}
+          {reviewStatus === "idle" && (
+            <p className="sim-lead">
+              Replay lake conditions along a timed GPX or Strava session.
+            </p>
+          )}
+          {reviewStatus === "loading" && (
+            <p className="sim-lead">Loading HRDPS wind for this session…</p>
+          )}
+          {reviewStatus === "error" && (
+            <p className="sim-lead">Could not load wind for this session.</p>
+          )}
+          {reviewStatus === "no-time" && (
+            <p className="sim-lead">
+              {reviewLabel ? `${reviewLabel} · ` : ""}
+              Path only — timed GPX or Strava GPS is needed to replay
+              conditions.
+            </p>
+          )}
+          {reviewStatus === "ready" && (
+            <p className="sim-lead">
+              {reviewLabel || "Session"} · scrub the track to see Hs at you
+            </p>
+          )}
+        </div>
+      )}
+
+      {mode === "sim" && (
         <div className="sim-body">
           <p className="sim-lead">Steady wind · heatmap updates live</p>
 

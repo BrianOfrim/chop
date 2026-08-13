@@ -6,9 +6,14 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w @chop/web",
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w @chop/api\" \"npm run dev -w @chop/web\"",
+    "dev:web": "npm run dev -w @chop/web",
+    "dev:api": "npm run dev -w @chop/api",
     "build": "npm run build -w @chop/wave-engine && npm run build -w @chop/web",
     "test": "npm run test -w @chop/wave-engine",
     "build:lake": ".venv/bin/python scripts/build-lake-assets.py"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

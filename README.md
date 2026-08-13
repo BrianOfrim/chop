@@ -9,16 +9,20 @@ Wave height is the hero layer: significant wave height (`Hs`) from a fetch-limit
 ```bash
 cd ~/Projects/chop
 npm install
+cp .env.example .env.local   # then fill Strava client id/secret
 npm run dev
 ```
 
-Open the URL Vite prints (usually http://localhost:5173).
+Open the URL Vite prints (usually http://localhost:5173). That starts the web UI and a localhost Strava API (`:8787`, proxied at `/api`).
+
+Strava: create an API app at https://www.strava.com/settings/api with Authorization Callback Domain `localhost`. Connect from the top bar, then pick a session to replay.
 
 ## Workspace layout
 
 | Path | Role |
 |------|------|
 | `apps/web/` | MapLibre + React UI |
+| `apps/api/` | Localhost Strava OAuth + activity proxy |
 | `packages/wave-engine/` | SMB `Hs` + depth-cap (TypeScript) |
 | `data/lakes/{spotId}/` | Per-lake shoreline, depth, fetch grids, spot profile |
 | `scripts/build-lake-assets.py` | Build web assets from GIS (AGS DEM + shoreline) |

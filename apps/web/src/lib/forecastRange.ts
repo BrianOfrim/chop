@@ -1,6 +1,6 @@
 /** How many hours of forecast to show in the charts. */
 
-export type ForecastRangeHours = 24 | 72 | 168;
+export type ForecastRangeHours = 72 | 168;
 
 /** Always include this many hours before now in the visible window. */
 export const FORECAST_LOOKBACK_HOURS = 24;
@@ -9,7 +9,6 @@ export const FORECAST_RANGE_OPTIONS: Array<{
   value: ForecastRangeHours;
   label: string;
 }> = [
-  { value: 24, label: "24 h" },
   { value: 72, label: "72 h" },
   { value: 168, label: "7 d" },
 ];
@@ -22,7 +21,7 @@ export function loadForecastRange(): ForecastRangeHours {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const n = Number(raw);
-    if (n === 24 || n === 72 || n === 168) return n;
+    if (n === 72 || n === 168) return n;
   } catch {
     // ignore
   }

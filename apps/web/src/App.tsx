@@ -47,6 +47,7 @@ import { SessionWaveChart } from "./components/SessionWaveChart";
 import { SessionWindChart } from "./components/SessionWindChart";
 import { formatWeatherHour, isThunder } from "./lib/weather";
 import { parseGpxFile, type GpxTrack } from "./lib/gpx";
+import { StravaPanel } from "./components/StravaPanel";
 import {
   buildSessionSeries,
   sessionDateRange,
@@ -60,6 +61,13 @@ import {
   sliceForecastHours,
   type ForecastRangeHours,
 } from "./lib/forecastRange";
+import {
+  historySpan,
+  historyViewLabel,
+  maxHistoryOffsetDays,
+  sliceHistoryView,
+  type WindMode,
+} from "./lib/historyRange";
 import "./App.css";
 
 export default function App() {
@@ -77,9 +85,15 @@ export default function App() {
   >("idle");
   const [hourIndex, setHourIndex] = useState(0);
   const [forecastPoint, setForecastPoint] = useState<ForecastPoint | null>(null);
-  const [simOn, setSimOn] = useState(false);
+  const [mode, setMode] = useState<WindMode>("forecast");
   const [simSpeedMps, setSimSpeedMps] = useState(8);
   const [simDirDeg, setSimDirDeg] = useState(270);
+  const [history, setHistory] = useState<WindForecast | null>(null);
+  const [historyStatus, setHistoryStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [historyOffsetDays, setHistoryOffsetDays] = useState(0);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [gpxTrack, setGpxTrack] = useState<GpxTrack | null>(null);
   const [gpxError, setGpxError] = useState<string | null>(null);
   const [sessionHours, setSessionHours] = useState<WindHour[] | null>(null);
@@ -143,6 +157,11 @@ export default function App() {
     setSessionSamples([]);
     setSessionIndex(0);
     setSessionStatus("idle");
+    setHistory(null);
+    setHistoryStatus("idle");
+    setHistoryOffsetDays(0);
+    setHistoryIndex(0);
+    setMode("forecast");
     (async () => {
       try {
         const loaded = await loadLakeGrids(entry.path);
@@ -209,25 +228,41 @@ export default function App() {
     [forecast, forecastRange],
   );
 
-  const forecastWind = forecastHours[hourIndex] ?? null;
+  const historyHours = useMemo(
+    () =>
+      history ? sliceHistoryView(history.hours, historyOffsetDays) : [],
+    [history, historyOffsetDays],
+  );
 
-  async function onGpxPicked(file: File | undefined) {
-    if (!file) return;
+  const chartHours =
+    mode === "history" ? historyHours : forecastHours;
+  const chartIndex = mode === "history" ? historyIndex : hourIndex;
+  const setChartIndex =
+    mode === "history" ? setHistoryIndex : setHourIndex;
+
+  const forecastWind = forecastHours[hourIndex] ?? null;
+  const historyWind = historyHours[historyIndex] ?? null;
+
+  function applyTrack(track: GpxTrack) {
     setGpxError(null);
     setSessionHours(null);
     setSessionSamples([]);
     setSessionIndex(0);
     setSessionStatus("idle");
-    setSimOn(false);
+    setMode("review");
+    setGpxTrack(track);
+    if (!track.startTime || !track.endTime) {
+      setSessionStatus("no-time");
+      setGpxError(
+        "Track has no timestamps — path only. Export a timed GPX to replay conditions.",
+      );
+    }
+  }
+
+  async function onGpxPicked(file: File | undefined) {
+    if (!file) return;
     try {
-      const track = await parseGpxFile(file);
-      setGpxTrack(track);
-      if (!track.startTime || !track.endTime) {
-        setSessionStatus("no-time");
-        setGpxError(
-          "Track has no timestamps — path only. Export a timed GPX to replay conditions.",
-        );
-      }
+      applyTrack(await parseGpxFile(file));
     } catch (e) {
       setGpxTrack(null);
       setSessionStatus("idle");
@@ -309,20 +344,80 @@ export default function App() {
     }
   }, [gpxTrack, grids, sessionHours]);
 
-  const sessionActive = sessionSamples.length > 0;
-  const sessionSample = sessionActive
+  // Load 90-day HRDPS archive when entering History mode (cached per lake).
+  // Important: do not bail on historyStatus==="loading" — React Strict Mode
+  // remounts effects and would otherwise leave the UI stuck loading forever.
+  useEffect(() => {
+    if (mode !== "history" || !spot) return;
+    if (history) return;
+
+    let cancelled = false;
+    setHistoryStatus("loading");
+    const span = historySpan();
+    const proxy =
+      spot.proxyPoints.find(
+        (p) =>
+          p.role === "background_model_point" ||
+          p.role === "open_water_model_point",
+      ) ?? spot.proxyPoints[0];
+    const lat = proxy?.latitude ?? spot.identity.latitude;
+    const lon = proxy?.longitude ?? spot.identity.longitude;
+
+    (async () => {
+      try {
+        const hist = await fetchHrdpsWindRange(
+          lat,
+          lon,
+          span.startDate,
+          span.endDate,
+        );
+        if (cancelled) return;
+        setHistory(hist);
+        setHistoryStatus("ready");
+        setHistoryOffsetDays(0);
+        const view = sliceHistoryView(hist.hours, 0);
+        setHistoryIndex(nearestHourIndex(view));
+      } catch (e) {
+        if (cancelled) return;
+        console.error("History fetch failed", e);
+        setHistory(null);
+        setHistoryStatus("error");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, spot, history]);
+
+  useEffect(() => {
+    if (mode !== "history" || historyHours.length === 0) return;
+    setHistoryIndex(historyHours.length - 1);
+  }, [mode, historyOffsetDays, historyHours.length]);
+
+  const reviewActive =
+    mode === "review" && sessionSamples.length > 0;
+  const sessionSample = reviewActive
     ? sessionSamples[Math.min(sessionIndex, sessionSamples.length - 1)] ?? null
     : null;
 
-  function enableSim(on: boolean) {
-    if (on && !simOn) {
-      const src = sessionSample?.wind ?? forecastWind;
+  function changeMode(next: WindMode) {
+    if (next === "sim" && mode !== "sim") {
+      const src =
+        mode === "history"
+          ? historyWind
+          : mode === "review"
+            ? (sessionSample?.wind ?? forecastWind)
+            : forecastWind;
       if (src) {
         setSimSpeedMps(src.windSpeedMps);
         setSimDirDeg(src.windDirDeg);
       }
     }
-    setSimOn(on);
+    if (next === "history" && historyStatus === "error") {
+      setHistoryStatus("idle");
+    }
+    setMode(next);
   }
 
   const simWind: WindHour = useMemo(
@@ -337,14 +432,17 @@ export default function App() {
     [simSpeedMps, simDirDeg],
   );
 
-  const wind = simOn
-    ? simWind
-    : sessionSample
-      ? sessionSample.wind
-      : forecastWind;
+  const wind =
+    mode === "sim"
+      ? simWind
+      : mode === "review" && sessionSample
+        ? sessionSample.wind
+        : mode === "history"
+          ? historyWind
+          : forecastWind;
 
   const selectedHsM = useMemo(() => {
-    if (sessionSample && !simOn) return sessionSample.hsM;
+    if (mode === "review" && sessionSample) return sessionSample.hsM;
     if (!grids || !wind) return null;
     const hs = computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
     if (forecastPoint) {
@@ -361,10 +459,10 @@ export default function App() {
       if (Number.isFinite(v) && v > m) m = v;
     }
     return m;
-  }, [grids, wind, forecastPoint, sessionSample, simOn]);
+  }, [grids, wind, forecastPoint, sessionSample, mode]);
 
   const timeLabel = useMemo(() => {
-    if (sessionSample && !simOn) {
+    if (mode === "review" && sessionSample) {
       return new Date(sessionSample.time).toLocaleString(undefined, {
         weekday: "short",
         month: "short",
@@ -381,13 +479,34 @@ export default function App() {
       hour: "numeric",
       minute: "2-digit",
     });
-  }, [wind, sessionSample, simOn]);
+  }, [wind, sessionSample, mode]);
 
-  const wxHour = simOn
-    ? null
-    : sessionSample
-      ? sessionSample.wind
-      : forecastWind;
+  const wxHour =
+    mode === "sim"
+      ? null
+      : mode === "review" && sessionSample
+        ? sessionSample.wind
+        : mode === "history"
+          ? historyWind
+          : forecastWind;
+
+  const histMaxOffset = maxHistoryOffsetDays();
+  const histLabel = historyViewLabel(historyOffsetDays);
+  const rangeControlsDisabled = mode !== "forecast";
+  const showForecastCharts =
+    (mode === "forecast" || mode === "history") && chartHours.length > 0;
+  const lakeBounds = useMemo(
+    () =>
+      grids
+        ? {
+            west: grids.meta.west,
+            south: grids.meta.south,
+            east: grids.meta.east,
+            north: grids.meta.north,
+          }
+        : null,
+    [grids],
+  );
 
   return (
     <div className="app">
@@ -410,33 +529,6 @@ export default function App() {
             ))}
           </select>
         </label>
-        <div className="gpx-picker">
-          <input
-            ref={gpxInputRef}
-            type="file"
-            accept=".gpx,application/gpx+xml,text/xml,application/xml"
-            className="gpx-input"
-            onChange={(e) => void onGpxPicked(e.target.files?.[0])}
-          />
-          {gpxTrack ? (
-            <>
-              <span className="gpx-name" title={gpxTrack.filename}>
-                {gpxTrack.label}
-              </span>
-              <button type="button" className="gpx-btn" onClick={clearGpx}>
-                Clear track
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="gpx-btn"
-              onClick={() => gpxInputRef.current?.click()}
-            >
-              Upload GPX
-            </button>
-          )}
-        </div>
         <div className="unit-prefs" title="Display units">
           <label className="unit-picker">
             Wind
@@ -490,8 +582,14 @@ export default function App() {
         {error && <div className="banner error">{error}</div>}
         {gpxError && <div className="banner error">{gpxError}</div>}
         {loading && <div className="banner">Loading lake & HRDPS wind…</div>}
-        {sessionStatus === "loading" && (
+        {sessionStatus === "loading" && mode === "review" && (
           <div className="banner">Loading HRDPS wind for session…</div>
+        )}
+        {historyStatus === "loading" && mode === "history" && (
+          <div className="banner">Loading 90-day HRDPS history…</div>
+        )}
+        {historyStatus === "error" && mode === "history" && (
+          <div className="banner error">Historical wind unavailable</div>
         )}
         {grids && spot && shoreline && (
           <MapView
@@ -501,11 +599,12 @@ export default function App() {
             shoreline={shoreline}
             wind={wind}
             units={units}
-            simulating={simOn}
+            simulating={mode === "sim"}
+            historic={mode === "history"}
             forecastPoint={forecastPoint}
-            gpxTrack={gpxTrack}
+            gpxTrack={mode === "review" ? gpxTrack : null}
             gpxCursor={
-              sessionSample && !simOn
+              mode === "review" && sessionSample
                 ? { lon: sessionSample.lon, lat: sessionSample.lat }
                 : null
             }
@@ -514,13 +613,59 @@ export default function App() {
           />
         )}
         <WindSimPanel
-          active={simOn}
-          onActiveChange={enableSim}
+          mode={mode}
+          onModeChange={changeMode}
           speedMps={simSpeedMps}
           dirDeg={simDirDeg}
           onSpeedMps={setSimSpeedMps}
           onDirDeg={setSimDirDeg}
           windUnit={units.wind}
+          historyStatus={historyStatus}
+          historyOffsetDays={historyOffsetDays}
+          historyLabel={histLabel}
+          canHistoryBack={historyOffsetDays < histMaxOffset}
+          canHistoryForward={historyOffsetDays > 0}
+          onHistoryBack={() => {
+            setHistoryOffsetDays((d) => Math.min(histMaxOffset, d + 7));
+          }}
+          onHistoryForward={() => {
+            setHistoryOffsetDays((d) => Math.max(0, d - 7));
+          }}
+          reviewStatus={
+            !gpxTrack ? "idle" : sessionStatus === "idle" ? "loading" : sessionStatus
+          }
+          reviewLabel={gpxTrack?.label ?? ""}
+          reviewToolbar={
+            <div className="review-sources">
+              <input
+                ref={gpxInputRef}
+                type="file"
+                accept=".gpx,application/gpx+xml,text/xml,application/xml"
+                className="gpx-input"
+                onChange={(e) => void onGpxPicked(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                className="gpx-btn"
+                onClick={() => gpxInputRef.current?.click()}
+              >
+                Upload GPX
+              </button>
+              <StravaPanel
+                embedded
+                lakeName={spot?.identity.name ?? null}
+                lakeBounds={lakeBounds}
+                activeTrackLabel={gpxTrack?.label ?? null}
+                onTrack={applyTrack}
+                onError={setGpxError}
+              />
+              {gpxTrack && (
+                <button type="button" className="gpx-btn" onClick={clearGpx}>
+                  Clear track
+                </button>
+              )}
+            </div>
+          }
         />
       </main>
 
@@ -528,16 +673,17 @@ export default function App() {
         <div className="readout-row">
           <div className="readout">
             <strong>{spot?.identity.name ?? "—"}</strong>
-            {simOn ? (
+            {mode === "sim" ? (
               <span className="sim-badge">Sim</span>
-            ) : sessionActive ? (
-              <span className="session-badge">Session</span>
+            ) : mode === "review" ? (
+              <span className="review-badge">Review</span>
+            ) : mode === "history" ? (
+              <span className="history-badge">History</span>
             ) : (
               wind && <span className="muted">{timeLabel}</span>
             )}
-            {(sessionActive || simOn) && wind && (
-              <span className="muted">{timeLabel}</span>
-            )}
+            {(mode === "review" || mode === "sim" || mode === "history") &&
+              wind && <span className="muted">{timeLabel}</span>}
             {wind && (
               <span>
                 {formatWind(
@@ -561,7 +707,7 @@ export default function App() {
             )}
             {selectedHsM != null && (
               <span>
-                {sessionActive && !simOn
+                {mode === "review" && sessionSample
                   ? "Hs at you"
                   : forecastPoint
                     ? "Hs"
@@ -569,15 +715,15 @@ export default function App() {
                 {formatWaveHeight(selectedHsM, units.wave)}
               </span>
             )}
-            {gpxTrack && (
+            {mode === "review" && gpxTrack && (
               <span className="muted" title={gpxTrack.filename}>
                 Track {gpxTrack.label}
               </span>
             )}
-            {waterTempStatus === "loading" && (
+            {mode === "forecast" && waterTempStatus === "loading" && (
               <span className="muted">water temp…</span>
             )}
-            {waterTempStatus === "ready" && waterTemp && (
+            {mode === "forecast" && waterTempStatus === "ready" && waterTemp && (
               <span title={waterTemp.note}>
                 Water {formatTemp(waterTemp.tempC, units.temp)}
                 <span className="muted">
@@ -587,7 +733,7 @@ export default function App() {
                 </span>
               </span>
             )}
-            {waterTempStatus === "unavailable" && (
+            {mode === "forecast" && waterTempStatus === "unavailable" && (
               <span className="muted" title="No clear-sky MODIS LST in the last ~3 weeks">
                 Water temp unavailable
               </span>
@@ -598,8 +744,8 @@ export default function App() {
             role="group"
             aria-label="Forecast range"
             title={
-              sessionActive
-                ? "Forecast range applies after clearing the GPX session"
+              rangeControlsDisabled
+                ? "Forecast range applies in Forecast mode"
                 : "Forward forecast duration (always includes the past 24 hours)"
             }
           >
@@ -609,7 +755,7 @@ export default function App() {
                 type="button"
                 className={forecastRange === o.value ? "is-on" : ""}
                 aria-pressed={forecastRange === o.value}
-                disabled={sessionActive}
+                disabled={rangeControlsDisabled}
                 onClick={() => updateForecastRange(o.value)}
               >
                 {o.label}
@@ -617,8 +763,8 @@ export default function App() {
             ))}
           </div>
         </div>
-        {sessionActive ? (
-          <div className={`forecast-panel${simOn ? " is-sim" : ""}`}>
+        {reviewActive ? (
+          <div className="forecast-panel">
             <SessionWindChart
               samples={sessionSamples}
               sampleIndex={sessionIndex}
@@ -657,60 +803,78 @@ export default function App() {
             </div>
           </div>
         ) : (
-          forecastHours.length > 0 && (
-            <div className={`forecast-panel${simOn ? " is-sim" : ""}`}>
+          showForecastCharts && (
+            <div className="forecast-panel">
               <WindChart
-                hours={forecastHours}
-                hourIndex={hourIndex}
-                onSelectHour={setHourIndex}
+                hours={chartHours}
+                hourIndex={chartIndex}
+                onSelectHour={setChartIndex}
                 windUnit={units.wind}
               />
               {grids && (
                 <WaveChart
-                  hours={forecastHours}
-                  hourIndex={hourIndex}
-                  onSelectHour={setHourIndex}
+                  hours={chartHours}
+                  hourIndex={chartIndex}
+                  onSelectHour={setChartIndex}
                   grids={grids}
                   waveUnit={units.wave}
                   sampleAt={forecastPoint}
                 />
               )}
               <WeatherStrip
-                hours={forecastHours}
-                hourIndex={hourIndex}
-                onSelectHour={setHourIndex}
+                hours={chartHours}
+                hourIndex={chartIndex}
+                onSelectHour={setChartIndex}
               />
               <div className="forecast-plot">
                 <div className="forecast-plot-rail" aria-hidden />
                 <ForecastTimeAxis
-                  times={forecastHours.map((h) => h.time)}
-                  hourIndex={hourIndex}
-                  onSelectHour={setHourIndex}
+                  times={chartHours.map((h) => h.time)}
+                  hourIndex={chartIndex}
+                  onSelectHour={setChartIndex}
                 />
               </div>
               <div className="forecast-plot scrubber-row">
                 <div className="forecast-plot-rail scrubber-rail">
-                  <button
-                    type="button"
-                    className="now-btn"
-                    disabled={hourIndex === nearestHourIndex(forecastHours)}
-                    onClick={() =>
-                      setHourIndex(nearestHourIndex(forecastHours))
-                    }
-                  >
-                    Now
-                  </button>
+                  {mode === "history" ? (
+                    <button
+                      type="button"
+                      className="now-btn"
+                      disabled={historyOffsetDays === 0}
+                      onClick={() => {
+                        setHistoryOffsetDays(0);
+                        if (history) {
+                          setHistoryIndex(
+                            nearestHourIndex(sliceHistoryView(history.hours, 0)),
+                          );
+                        }
+                      }}
+                    >
+                      Latest
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="now-btn"
+                      disabled={chartIndex === nearestHourIndex(chartHours)}
+                      onClick={() =>
+                        setChartIndex(nearestHourIndex(chartHours))
+                      }
+                    >
+                      Now
+                    </button>
+                  )}
                 </div>
                 <div
                   className="scrubber"
-                  style={sliderInsetStyle(forecastHours.length)}
+                  style={sliderInsetStyle(chartHours.length)}
                 >
                   <input
                     type="range"
                     min={0}
-                    max={forecastHours.length - 1}
-                    value={hourIndex}
-                    onChange={(e) => setHourIndex(Number(e.target.value))}
+                    max={Math.max(0, chartHours.length - 1)}
+                    value={chartIndex}
+                    onChange={(e) => setChartIndex(Number(e.target.value))}
                   />
                 </div>
               </div>
