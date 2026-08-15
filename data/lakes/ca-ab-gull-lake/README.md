@@ -1,4 +1,19 @@
-# Gull Lake
+# Gull Lake assets
 
-Shoreline: OpenStreetMap relation 1927760 (ODbL) (`relation/1927760`).
-Depth: synthetic (max 18.0 m).
+Precomputed grids for **chop**.
+
+| File | Description |
+|------|-------------|
+| `spot-profile.json` | Spot metadata, proxy points, ride beaches |
+| `shoreline.geojson` | Lake boundary (WGS84) |
+| `depth.bin` | Float32 depth (m), row-major north-first; land = `-1` |
+| `fetch_16dir.bin` | Float32 fetch (m), shape `(16, nrows, ncols)` |
+| `depth-contours.geojson` | Depth isolines traced from `depth.bin` |
+| `grid.json` | Bounds, size, directions, licence metadata |
+
+## Data sources
+
+- Shoreline: AGS DIG 2008-0772
+- Bathymetry DEM: AGS DIG 2008-0434 (50 m Arc ASCII)
+- Water surface elevation used for depth: **896.0 m asl**
+- Licence: [Open Government Licence – Alberta](https://open.alberta.ca/licence)

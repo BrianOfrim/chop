@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-wabamun-lake",
+  "identity": {
+    "name": "Wabamun Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Edmonton / Wabamun",
+    "latitude": 53.545,
+    "longitude": -114.59,
+    "elevationM": 723,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf", "foil"],
+    "waterType": "inland_lake",
+    "summary": "Main Edmonton-area kite lake. Long east–west fetch, synoptic wind, public shores at Seba Beach and the village."
+  },
+  "geometry": {
+    "shape": "elongated_basin",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Power-plant history; water quality varies. Pick shore for wind direction."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": ["W", "NW", "SW", "E"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 53.545,
+      "longitude": -114.59,
+      "description": "Mid-lake open water"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "seba-beach",
+      "name": "Seba Beach",
+      "latitude": 53.557,
+      "longitude": -114.73,
+      "shore": "west",
+      "bestWindDirs": ["E", "NE", "SE"],
+      "notes": "West-end village beach."
+    },
+    {
+      "id": "wabamun-village",
+      "name": "Wabamun village",
+      "latitude": 53.557,
+      "longitude": -114.47,
+      "shore": "northeast",
+      "bestWindDirs": ["W", "SW", "NW"],
+      "notes": "Provincial park / village waterfront."
+    }
+  ]
+}

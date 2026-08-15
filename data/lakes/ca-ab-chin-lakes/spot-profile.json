@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-chin-lakes",
+  "identity": {
+    "name": "Chin Lakes",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Taber / Lethbridge",
+    "latitude": 49.75,
+    "longitude": -112.35,
+    "elevationM": 820,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf", "foil"],
+    "waterType": "inland_reservoir",
+    "summary": "Southern prairie reservoirs east of Lethbridge. Open fetch, strong synoptic flow; same wind country as Keho and McGregor."
+  },
+  "geometry": {
+    "shape": "linked_reservoirs",
+    "surroundingTerrain": "prairie_open",
+    "notes": "Irrigation chain; water level varies. AGS grid covers the Chin Lakes complex."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "prairie_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": ["W", "SW", "NW", "S"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 49.75,
+      "longitude": -112.35,
+      "description": "Main Chin basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "chin-south",
+      "name": "South / Chin area",
+      "latitude": 49.73,
+      "longitude": -112.36,
+      "shore": "south",
+      "bestWindDirs": ["N", "NW", "W"],
+      "notes": "Confirm access and irrigation level."
+    }
+  ]
+}

@@ -17,6 +17,7 @@ export type GridMeta = {
   /** Meteorological FROM directions (deg) for each fetch band. */
   directionsDeg: number[];
   waterSurfaceM?: number;
+  contourIntervalM?: number;
   crs: string;
 };
 

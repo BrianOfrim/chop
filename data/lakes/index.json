@@ -8,18 +8,32 @@
       "path": "/lakes/ca-ab-pigeon-lake"
     },
     {
-      "id": "ca-ab-abraham-lake",
-      "name": "Abraham Lake",
+      "id": "ca-ab-wabamun-lake",
+      "name": "Wabamun Lake",
       "region": "Alberta, Canada",
       "enabled": true,
-      "path": "/lakes/ca-ab-abraham-lake"
+      "path": "/lakes/ca-ab-wabamun-lake"
     },
     {
-      "id": "ca-ab-sylvan-lake",
-      "name": "Sylvan Lake",
+      "id": "ca-ab-cooking-lake",
+      "name": "Cooking Lake",
       "region": "Alberta, Canada",
       "enabled": true,
-      "path": "/lakes/ca-ab-sylvan-lake"
+      "path": "/lakes/ca-ab-cooking-lake"
+    },
+    {
+      "id": "ca-ab-wizard-lake",
+      "name": "Wizard Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-wizard-lake"
+    },
+    {
+      "id": "ca-ab-lac-ste-anne",
+      "name": "Lac Ste. Anne",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-lac-ste-anne"
     },
     {
       "id": "ca-ab-gull-lake",
@@ -29,11 +43,74 @@
       "path": "/lakes/ca-ab-gull-lake"
     },
     {
+      "id": "ca-ab-sylvan-lake",
+      "name": "Sylvan Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-sylvan-lake"
+    },
+    {
+      "id": "ca-ab-buffalo-lake",
+      "name": "Buffalo Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-buffalo-lake"
+    },
+    {
+      "id": "ca-ab-ghost-lake",
+      "name": "Ghost Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-ghost-lake"
+    },
+    {
+      "id": "ca-ab-chestermere-lake",
+      "name": "Chestermere Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-chestermere-lake"
+    },
+    {
       "id": "ca-ab-keho-lake",
       "name": "Keho Lake",
       "region": "Alberta, Canada",
       "enabled": true,
       "path": "/lakes/ca-ab-keho-lake"
+    },
+    {
+      "id": "ca-ab-chin-lakes",
+      "name": "Chin Lakes",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-chin-lakes"
+    },
+    {
+      "id": "ca-ab-mcgregor-lake",
+      "name": "McGregor Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-mcgregor-lake"
+    },
+    {
+      "id": "ca-ab-upper-kananaskis-lake",
+      "name": "Upper Kananaskis Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-upper-kananaskis-lake"
+    },
+    {
+      "id": "ca-ab-abraham-lake",
+      "name": "Abraham Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-abraham-lake"
+    },
+    {
+      "id": "ca-ab-lesser-slave-lake",
+      "name": "Lesser Slave Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-lesser-slave-lake"
     }
   ]
 }

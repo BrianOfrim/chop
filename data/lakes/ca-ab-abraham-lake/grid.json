@@ -40,7 +40,8 @@
     "depth": "depth.bin",
     "fetch": "fetch_16dir.bin",
     "shoreline": "shoreline.geojson",
-    "spot": "spot-profile.json"
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
   },
   "stats": {
     "waterCells": 5388,
@@ -48,5 +49,6 @@
     "depthMaxM": 49.706329345703125,
     "depthMeanM": 32.944183349609375,
     "fetchMaxM": 11400.0
-  }
+  },
+  "contourIntervalM": 5.0
 }

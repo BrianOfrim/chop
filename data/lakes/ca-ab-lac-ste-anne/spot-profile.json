@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-lac-ste-anne",
+  "identity": {
+    "name": "Lac Ste. Anne",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Alberta Beach / Edmonton",
+    "latitude": 53.70,
+    "longitude": -114.44,
+    "elevationM": 730,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf"],
+    "waterType": "inland_lake",
+    "summary": "Large lake west of Edmonton. Alberta Beach is the main recreation shore; synoptic parkland wind."
+  },
+  "geometry": {
+    "shape": "broad_irregular",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Shallow bays and a bigger open basin; pilgrimage/beach crowds in late July."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": ["W", "NW", "SW", "E"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 53.70,
+      "longitude": -114.44,
+      "description": "Open basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "alberta-beach",
+      "name": "Alberta Beach",
+      "latitude": 53.677,
+      "longitude": -114.357,
+      "shore": "southeast",
+      "bestWindDirs": ["NW", "W", "N"],
+      "notes": "Main public beach village."
+    }
+  ]
+}

@@ -59,7 +59,7 @@ This is a shallow-lake engineering estimate, not WW3. Good for relative “where
 4. Register the lake in [`data/lakes/index.json`](data/lakes/index.json) with `"enabled": true`.
 5. Reload the app — the lake picker reads the index.
 
-Abraham Lake can follow the same contract (OSM shoreline + depth model).
+Abraham Lake can follow the same contract (OSM shoreline + synthetic depth). Gull, Sylvan, and Keho use AGS DEMs via `scripts/rebuild-ags-lakes.py`.
 
 ## Scripts
 
@@ -72,6 +72,6 @@ npm run build        # production web build
 ## Licence notes
 
 - App code: yours (add a licence when you care).
-- Pigeon GIS products: Open Government Licence – Alberta (see `data/lakes/ca-ab-pigeon-lake/README.md`).
+- Lake GIS (Pigeon, Gull, Sylvan, Keho): Open Government Licence – Alberta (see each `data/lakes/*/README.md`).
 - Basemap: OpenFreeMap / OpenStreetMap contributors.
 - Wind: Open-Meteo (GEM HRDPS).

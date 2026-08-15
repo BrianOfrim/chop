@@ -89,6 +89,7 @@ export const COLOR_SCALES: Record<ColorScaleId, ColorScaleDef> = {
 /** Wind chart uses thermal; wave/map Hs uses original chop. */
 export const DEFAULT_WIND_SCALE: ColorScaleId = "thermal";
 export const DEFAULT_WAVE_SCALE: ColorScaleId = "chop";
+export const DEFAULT_DEPTH_SCALE: ColorScaleId = "blues";
 
 export function sampleRgb(
   scale: ColorScaleId,

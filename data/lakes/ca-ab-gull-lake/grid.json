@@ -1,12 +1,12 @@
 {
   "spotId": "ca-ab-gull-lake",
-  "ncols": 140,
-  "nrows": 246,
-  "west": -114.08565687836595,
-  "south": 52.455943280813216,
-  "east": -113.91975646048199,
-  "north": 52.62550178968971,
-  "cellSizeM": 75.0,
+  "ncols": 241,
+  "nrows": 407,
+  "west": -114.09393959277413,
+  "south": 52.44894989032488,
+  "east": -113.91207184531135,
+  "north": 52.63344090967127,
+  "cellSizeM": 50.0,
   "nodata": -1.0,
   "nDirs": 16,
   "directionsDeg": [
@@ -27,26 +27,27 @@
     315.0,
     337.5
   ],
+  "waterSurfaceM": 896.0,
   "crs": "EPSG:4326",
-  "projectedCrs": "EPSG:32611",
+  "projectedCrs": "PROJCS[\"Alberta Geological Survey 10TM, NAD83\",GEOGCS[\"unnamed\",DATUM[\"North_American_Datum_1983\",SPHEROID[\"Geodetic Reference System of 1980\",6378137,298.257222100911],AUTHORITY[\"EPSG\",\"6269\"]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-115],PARAMETER[\"scale_factor\",0.9992],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"METER\",1],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
   "source": {
-    "shoreline": "OpenStreetMap relation 1927760 (ODbL)",
-    "bathymetry": "synthetic distance-from-shore (max=18.0m)",
-    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
-    "osmType": "relation",
-    "osmId": 1927760
+    "shoreline": "AGS DIG 2008-0772",
+    "bathymetry_dem": "AGS DIG 2008-0434 (50 m Arc ASCII)",
+    "licence": "Open Government Licence - Alberta"
   },
   "files": {
     "depth": "depth.bin",
     "fetch": "fetch_16dir.bin",
     "shoreline": "shoreline.geojson",
-    "spot": "spot-profile.json"
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
   },
   "stats": {
-    "waterCells": 14245,
-    "depthMinM": 0.5,
-    "depthMaxM": 17.982009887695312,
-    "depthMeanM": 14.30916976928711,
-    "fetchMaxM": 18862.5
-  }
+    "waterCells": 32442,
+    "depthMinM": 0.20000000298023224,
+    "depthMaxM": 10.281599998474121,
+    "depthMeanM": 5.334844589233398,
+    "fetchMaxM": 18900.0
+  },
+  "contourIntervalM": 1.0
 }

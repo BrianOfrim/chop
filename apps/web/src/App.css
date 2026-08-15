@@ -385,6 +385,49 @@
   min-width: 0;
 }
 
+.plot-fold {
+  width: 100%;
+  min-width: 0;
+}
+
+.plot-fold-toggle {
+  display: grid;
+  grid-template-columns: 6.75rem minmax(0, 1fr);
+  column-gap: 0.3rem;
+  align-items: center;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0.12rem 0;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.plot-fold-toggle:hover {
+  color: var(--accent);
+}
+
+.plot-fold.is-collapsed .plot-fold-toggle {
+  color: var(--ink);
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.plot-fold-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.plot-fold-chevron {
+  width: 0.7rem;
+  flex: none;
+}
+
 .forecast-plot {
   display: grid;
   grid-template-columns: 6.75rem minmax(0, 1fr);
@@ -763,6 +806,10 @@
   background: rgba(31, 111, 120, 0.1);
 }
 
+.overlay-toggle {
+  top: 3.05rem;
+}
+
 .sim-panel {
   position: absolute;
   top: 0.75rem;
@@ -810,6 +857,29 @@
   margin: 0;
   font-size: 0.68rem;
   color: var(--muted);
+}
+
+.review-follow-btn {
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.22rem 0.55rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.review-follow-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.review-follow-btn.is-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(31, 111, 120, 0.1);
 }
 
 .review-sources {

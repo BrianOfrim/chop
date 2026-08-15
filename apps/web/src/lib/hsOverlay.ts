@@ -1,5 +1,6 @@
 import type { GridMeta } from "@chop/wave-engine";
 import {
+  DEFAULT_DEPTH_SCALE,
   DEFAULT_WAVE_SCALE,
   sampleRgba,
   type ColorScaleId,
@@ -32,6 +33,54 @@ export function hsToImageData(
   const px = img.data;
   for (let i = 0; i < ncols * nrows; i++) {
     const [r, g, b, a] = hsColor(hs[i]!, vmax, scale);
+    const o = i * 4;
+    px[o] = r;
+    px[o + 1] = g;
+    px[o + 2] = b;
+    px[o + 3] = a;
+  }
+  return img;
+}
+
+const DEPTH_MAX_STEPS_M = [4, 6, 8, 10, 12, 15, 18, 20, 25, 30, 40, 50, 60];
+
+/** Round a lake’s max depth up to a stable legend ceiling. */
+export function niceDepthMaxM(maxM: number): number {
+  const x = Math.max(maxM, 1);
+  return DEPTH_MAX_STEPS_M.find((s) => s >= x) ?? Math.ceil(x / 10) * 10;
+}
+
+export function depthMaxFromGrid(depth: Float32Array, nodata: number): number {
+  let max = 0;
+  for (let i = 0; i < depth.length; i++) {
+    const d = depth[i]!;
+    if (d > nodata && d > max) max = d;
+  }
+  return niceDepthMaxM(max);
+}
+
+/** Color scale for depth in meters → [r,g,b,a]. Land / nodata is transparent. */
+export function depthColor(
+  depthM: number,
+  vmax: number,
+  scale: ColorScaleId = DEFAULT_DEPTH_SCALE,
+): [number, number, number, number] {
+  if (!Number.isFinite(depthM) || depthM < 0) return [0, 0, 0, 0];
+  const t = Math.max(0, Math.min(1, depthM / Math.max(vmax, 0.01)));
+  return sampleRgba(scale, t, 170, 255);
+}
+
+export function depthToImageData(
+  depth: Float32Array,
+  meta: GridMeta,
+  vmax: number,
+  scale: ColorScaleId = DEFAULT_DEPTH_SCALE,
+): ImageData {
+  const { ncols, nrows } = meta;
+  const img = new ImageData(ncols, nrows);
+  const px = img.data;
+  for (let i = 0; i < ncols * nrows; i++) {
+    const [r, g, b, a] = depthColor(depth[i]!, vmax, scale);
     const o = i * 4;
     px[o] = r;
     px[o + 1] = g;

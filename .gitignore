@@ -11,3 +11,4 @@ apps/web/dist/
 apps/api/dist/
 apps/api/.strava-tokens.json
 packages/wave-engine/dist/
+data/ags-cache/

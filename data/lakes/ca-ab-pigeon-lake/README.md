@@ -8,6 +8,7 @@ Precomputed grids for **chop**.
 | `shoreline.geojson` | Lake boundary (WGS84) |
 | `depth.bin` | Float32 depth (m), row-major north-first; land = `-1` |
 | `fetch_16dir.bin` | Float32 fetch (m), shape `(16, nrows, ncols)` |
+| `depth-contours.geojson` | Depth isolines traced from `depth.bin` |
 | `grid.json` | Bounds, size, directions, licence metadata |
 
 ## Data sources

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-buffalo-lake",
+  "identity": {
+    "name": "Buffalo Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Stettler / Bashaw",
+    "latitude": 52.478,
+    "longitude": -112.915,
+    "elevationM": 776,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf", "foil"],
+    "waterType": "inland_lake",
+    "summary": "Large, irregular parkland lake east of Red Deer. Synoptic wind; long fetches in the main basins. Popular shores at Rochon Sands, White Sands, and Pelican Point."
+  },
+  "geometry": {
+    "shape": "irregular_multi_basin",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Main basin plus shallower arms and The Narrows. Shore choice matters more than a single best direction."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": ["NW", "W", "SW", "SE", "N"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 52.478,
+      "longitude": -112.915,
+      "description": "Central open-water cell in the main basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "rochon-sands",
+      "name": "Rochon Sands",
+      "latitude": 52.461,
+      "longitude": -112.883,
+      "shore": "south",
+      "bestWindDirs": ["N", "NW", "NE"],
+      "notes": "Provincial park beach on the south shore."
+    },
+    {
+      "id": "white-sands",
+      "name": "White Sands",
+      "latitude": 52.474,
+      "longitude": -112.817,
+      "shore": "southeast",
+      "bestWindDirs": ["NW", "W", "N"],
+      "notes": "Summer village; common kite/windsurf launch."
+    },
+    {
+      "id": "pelican-point",
+      "name": "Pelican Point",
+      "latitude": 52.537,
+      "longitude": -112.947,
+      "shore": "north",
+      "bestWindDirs": ["S", "SW", "SE"],
+      "notes": "North-shore beach near Bashaw."
+    }
+  ]
+}

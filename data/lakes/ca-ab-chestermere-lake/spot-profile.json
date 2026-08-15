@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-chestermere-lake",
+  "identity": {
+    "name": "Chestermere Lake",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Chestermere / Calgary",
+    "latitude": 51.033,
+    "longitude": -113.822,
+    "elevationM": 1030,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf"],
+    "waterType": "inland_reservoir",
+    "summary": "Narrow irrigation reservoir in Chestermere. Closest Calgary water; busy with boats and wake. Short fetch."
+  },
+  "geometry": {
+    "shape": "narrow_canal_reservoir",
+    "surroundingTerrain": "prairie_urban",
+    "notes": "Town bylaws and boat traffic; not a big-wave lake."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "chinook_foehn",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": ["W", "SW", "NW"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 51.033,
+      "longitude": -113.822,
+      "description": "Mid-reservoir"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "chestermere-west",
+      "name": "West / south launch area",
+      "latitude": 51.022,
+      "longitude": -113.825,
+      "shore": "west",
+      "bestWindDirs": ["E", "NE"],
+      "notes": "Confirm city launch rules."
+    }
+  ]
+}

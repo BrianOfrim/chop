@@ -5,8 +5,10 @@ import { WaveChart, type ForecastPoint } from "./components/WaveChart";
 import { ForecastTimeAxis } from "./components/ForecastTimeAxis";
 import { WeatherStrip } from "./components/WeatherStrip";
 import {
+  loadAllLakeShorelines,
   loadLakeGrids,
   loadLakeIndex,
+  shorelineBoundsByLake,
   type LakeIndexEntry,
   type SpotProfile,
 } from "./lib/lakeAssets";
@@ -59,6 +61,7 @@ import {
   type SessionSample,
 } from "./lib/sessionTrack";
 import { SessionPointChart } from "./components/SessionPointChart";
+import { CollapsiblePlot } from "./components/CollapsiblePlot";
 import {
   FORECAST_RANGE_OPTIONS,
   loadForecastRange,
@@ -76,6 +79,24 @@ import {
 } from "./lib/historyRange";
 import "./App.css";
 
+const REVIEW_FOLLOW_KEY = "chop.reviewFollow";
+
+function loadReviewFollow(): boolean {
+  try {
+    return localStorage.getItem(REVIEW_FOLLOW_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveReviewFollow(on: boolean): void {
+  try {
+    localStorage.setItem(REVIEW_FOLLOW_KEY, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function App() {
   const [lakes, setLakes] = useState<LakeIndexEntry[]>([]);
   const [lakeId, setLakeId] = useState("ca-ab-pigeon-lake");
@@ -84,6 +105,10 @@ export default function App() {
   const [shoreline, setShoreline] = useState<GeoJSON.FeatureCollection | null>(
     null,
   );
+  const [depthContours, setDepthContours] =
+    useState<GeoJSON.FeatureCollection | null>(null);
+  const [allShorelines, setAllShorelines] =
+    useState<GeoJSON.FeatureCollection | null>(null);
   const [forecast, setForecast] = useState<WindForecast | null>(null);
   const [waterTemp, setWaterTemp] = useState<LakeSurfaceTemp | null>(null);
   const [waterTempStatus, setWaterTempStatus] = useState<
@@ -108,6 +133,8 @@ export default function App() {
   const [sessionStatus, setSessionStatus] = useState<
     "idle" | "loading" | "ready" | "no-time" | "error"
   >("idle");
+  const [reviewFollow, setReviewFollow] = useState(loadReviewFollow);
+  const pendingSessionRef = useRef<GpxTrack | null>(null);
   const gpxInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -143,6 +170,21 @@ export default function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
+  useEffect(() => {
+    if (lakes.length === 0) return;
+    let cancelled = false;
+    loadAllLakeShorelines(lakes)
+      .then((fc) => {
+        if (!cancelled) setAllShorelines(fc);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lakes]);
+
   // Decouple asset load from wind so the map shows even if HRDPS is slow/fails
   useEffect(() => {
     const entry = lakes.find((l) => l.id === lakeId);
@@ -153,21 +195,26 @@ export default function App() {
     setForecast(null);
     setWaterTemp(null);
     setWaterTempStatus("idle");
-    setGrids(null);
-    setSpot(null);
-    setShoreline(null);
     setForecastPoint(null);
-    setGpxTrack(null);
-    setGpxError(null);
-    setSessionHours(null);
-    setSessionSamples([]);
-    setSessionIndex(0);
-    setSessionStatus("idle");
+    const keepSession = pendingSessionRef.current != null;
+    if (!keepSession) {
+      setGpxTrack(null);
+      setGpxError(null);
+      setSessionHours(null);
+      setSessionSamples([]);
+      setSessionIndex(0);
+      setSessionStatus("idle");
+      setMode("forecast");
+    } else {
+      setSessionHours(null);
+      setSessionSamples([]);
+      setSessionIndex(0);
+      setSessionStatus("idle");
+    }
     setHistory(null);
     setHistoryStatus("idle");
     setHistoryOffsetDays(0);
     setHistoryIndex(0);
-    setMode("forecast");
     (async () => {
       try {
         const loaded = await loadLakeGrids(entry.path);
@@ -175,7 +222,12 @@ export default function App() {
         setGrids(loaded.grids);
         setSpot(loaded.spot);
         setShoreline(loaded.shoreline);
+        setDepthContours(loaded.depthContours);
         setLoading(false);
+        if (pendingSessionRef.current) {
+          pendingSessionRef.current = null;
+          setMode("review");
+        }
 
         const proxy =
           loaded.spot.proxyPoints.find(
@@ -262,6 +314,14 @@ export default function App() {
       setGpxError(
         "Track has no timestamps — path only. Export a timed GPX to replay conditions.",
       );
+    }
+  }
+
+  function onStravaTrack(track: GpxTrack, atLakeId: string | null) {
+    applyTrack(track);
+    if (atLakeId && atLakeId !== lakeId) {
+      pendingSessionRef.current = track;
+      setLakeId(atLakeId);
     }
   }
 
@@ -506,18 +566,15 @@ export default function App() {
   const rangeControlsDisabled = mode !== "forecast";
   const showForecastCharts =
     (mode === "forecast" || mode === "history") && chartHours.length > 0;
-  const lakeBounds = useMemo(
-    () =>
-      grids
-        ? {
-            west: grids.meta.west,
-            south: grids.meta.south,
-            east: grids.meta.east,
-            north: grids.meta.north,
-          }
-        : null,
-    [grids],
-  );
+  const stravaLakes = useMemo(() => {
+    if (!allShorelines) return [];
+    const bounds = shorelineBoundsByLake(allShorelines);
+    return lakes.flatMap((l) => {
+      const b = bounds[l.id];
+      if (!b) return [];
+      return [{ id: l.id, name: l.name, bounds: b }];
+    });
+  }, [lakes, allShorelines]);
   const reviewWindTicks = useMemo(() => {
     if (mode !== "review" || !sessionSample) return null;
     return [
@@ -614,10 +671,13 @@ export default function App() {
         )}
         {grids && spot && shoreline && (
           <MapView
-            key={lakeId}
             grids={grids}
             spot={spot}
             shoreline={shoreline}
+            allShorelines={allShorelines}
+            selectedLakeId={lakeId}
+            onSelectLake={setLakeId}
+            depthContours={depthContours}
             wind={wind}
             units={units}
             simulating={mode === "sim"}
@@ -635,6 +695,11 @@ export default function App() {
             }
             gpxWindTicks={reviewWindTicks}
             gpxWindTickIndex={reviewWindTicks ? 0 : null}
+            followCursor={mode === "review" && reviewFollow}
+            onFollowCursorChange={(on) => {
+              setReviewFollow(on);
+              saveReviewFollow(on);
+            }}
             onChoosePoint={setForecastPoint}
             onClearPoint={() => setForecastPoint(null)}
           />
@@ -662,6 +727,11 @@ export default function App() {
             !gpxTrack ? "idle" : sessionStatus === "idle" ? "loading" : sessionStatus
           }
           reviewLabel={gpxTrack?.label ?? ""}
+          reviewFollow={reviewFollow}
+          onReviewFollowChange={(on) => {
+            setReviewFollow(on);
+            saveReviewFollow(on);
+          }}
           reviewToolbar={
             <div className="review-sources">
               <input
@@ -680,10 +750,9 @@ export default function App() {
               </button>
               <StravaPanel
                 embedded
-                lakeName={spot?.identity.name ?? null}
-                lakeBounds={lakeBounds}
+                lakes={stravaLakes}
                 activeTrackLabel={gpxTrack?.label ?? null}
-                onTrack={applyTrack}
+                onTrack={onStravaTrack}
                 onError={setGpxError}
               />
               {gpxTrack && (
@@ -794,29 +863,37 @@ export default function App() {
         </div>
         {reviewActive ? (
           <div className="forecast-panel">
-            <SessionWindChart
-              samples={sessionSamples}
-              sampleIndex={sessionIndex}
-              onSelectSample={setSessionIndex}
-              windUnit={units.wind}
-            />
-            <SessionSpeedChart
-              samples={sessionSamples}
-              sampleIndex={sessionIndex}
-              onSelectSample={setSessionIndex}
-              windUnit={units.wind}
-            />
-            <SessionPointChart
-              samples={sessionSamples}
-              sampleIndex={sessionIndex}
-              onSelectSample={setSessionIndex}
-            />
-            <SessionWaveChart
-              samples={sessionSamples}
-              sampleIndex={sessionIndex}
-              onSelectSample={setSessionIndex}
-              waveUnit={units.wave}
-            />
+            <CollapsiblePlot id="review-wind" title="Wind">
+              <SessionWindChart
+                samples={sessionSamples}
+                sampleIndex={sessionIndex}
+                onSelectSample={setSessionIndex}
+                windUnit={units.wind}
+              />
+            </CollapsiblePlot>
+            <CollapsiblePlot id="review-speed" title="Speed">
+              <SessionSpeedChart
+                samples={sessionSamples}
+                sampleIndex={sessionIndex}
+                onSelectSample={setSessionIndex}
+                windUnit={units.wind}
+              />
+            </CollapsiblePlot>
+            <CollapsiblePlot id="review-point" title="Point">
+              <SessionPointChart
+                samples={sessionSamples}
+                sampleIndex={sessionIndex}
+                onSelectSample={setSessionIndex}
+              />
+            </CollapsiblePlot>
+            <CollapsiblePlot id="review-waves" title="Waves">
+              <SessionWaveChart
+                samples={sessionSamples}
+                sampleIndex={sessionIndex}
+                onSelectSample={setSessionIndex}
+                waveUnit={units.wave}
+              />
+            </CollapsiblePlot>
             <div className="forecast-plot scrubber-row">
               <div className="forecast-plot-rail scrubber-rail">
                 <button
@@ -845,27 +922,33 @@ export default function App() {
         ) : (
           showForecastCharts && (
             <div className="forecast-panel">
-              <WindChart
-                hours={chartHours}
-                hourIndex={chartIndex}
-                onSelectHour={setChartIndex}
-                windUnit={units.wind}
-              />
-              {grids && (
-                <WaveChart
+              <CollapsiblePlot id="forecast-wind" title="Wind">
+                <WindChart
                   hours={chartHours}
                   hourIndex={chartIndex}
                   onSelectHour={setChartIndex}
-                  grids={grids}
-                  waveUnit={units.wave}
-                  sampleAt={forecastPoint}
+                  windUnit={units.wind}
                 />
+              </CollapsiblePlot>
+              {grids && (
+                <CollapsiblePlot id="forecast-waves" title="Waves">
+                  <WaveChart
+                    hours={chartHours}
+                    hourIndex={chartIndex}
+                    onSelectHour={setChartIndex}
+                    grids={grids}
+                    waveUnit={units.wave}
+                    sampleAt={forecastPoint}
+                  />
+                </CollapsiblePlot>
               )}
-              <WeatherStrip
-                hours={chartHours}
-                hourIndex={chartIndex}
-                onSelectHour={setChartIndex}
-              />
+              <CollapsiblePlot id="forecast-sky" title="Sky">
+                <WeatherStrip
+                  hours={chartHours}
+                  hourIndex={chartIndex}
+                  onSelectHour={setChartIndex}
+                />
+              </CollapsiblePlot>
               <div className="forecast-plot">
                 <div className="forecast-plot-rail" aria-hidden />
                 <ForecastTimeAxis

@@ -28,6 +28,8 @@ type Props = {
   reviewStatus?: "idle" | "loading" | "ready" | "no-time" | "error";
   reviewLabel?: string;
   reviewToolbar?: ReactNode;
+  reviewFollow?: boolean;
+  onReviewFollowChange?: (on: boolean) => void;
 };
 
 function eventFromDeg(el: SVGSVGElement, clientX: number, clientY: number): number {
@@ -56,6 +58,8 @@ export function WindSimPanel({
   reviewStatus = "idle",
   reviewLabel = "",
   reviewToolbar,
+  reviewFollow = false,
+  onReviewFollowChange,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const dragging = useRef(false);
@@ -162,6 +166,14 @@ export function WindSimPanel({
               {reviewLabel || "Session"} · scrub the track to see Hs at you
             </p>
           )}
+          <button
+            type="button"
+            className={`review-follow-btn${reviewFollow ? " is-on" : ""}`}
+            aria-pressed={reviewFollow}
+            onClick={() => onReviewFollowChange?.(!reviewFollow)}
+          >
+            Center on point
+          </button>
         </div>
       )}
 

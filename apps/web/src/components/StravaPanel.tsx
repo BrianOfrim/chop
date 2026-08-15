@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   WATERSPORT_TYPES,
-  activityAtLake,
   disconnectStrava,
   fetchStravaActivities,
   fetchStravaStatus,
   fetchStravaTrack,
+  lakeForActivity,
   stravaConnectHref,
-  type LakeBounds,
+  type NamedLakeBounds,
   type StravaActivity,
   type StravaStatus,
 } from "../lib/strava";
@@ -15,11 +15,10 @@ import { gpxTrackFromStrava } from "../lib/stravaTrack";
 import type { GpxTrack } from "../lib/gpx";
 
 type Props = {
-  lakeName?: string | null;
-  lakeBounds?: LakeBounds | null;
+  lakes?: NamedLakeBounds[];
   activeTrackLabel?: string | null;
   embedded?: boolean;
-  onTrack: (track: GpxTrack) => void;
+  onTrack: (track: GpxTrack, lakeId: string | null) => void;
   onError: (message: string | null) => void;
 };
 
@@ -60,8 +59,7 @@ const MIN_VISIBLE = 12;
 const MAX_PAGES_PER_FETCH = 8;
 
 export function StravaPanel({
-  lakeName,
-  lakeBounds = null,
+  lakes = [],
   activeTrackLabel,
   embedded = false,
   onTrack,
@@ -122,11 +120,10 @@ export function StravaPanel({
 
   const visible = useMemo(() => {
     return activities.filter((a) => {
-      if (!activityAtLake(a, lakeBounds ?? null)) return false;
       if (watersportsOnly && !WATERSPORT_TYPES.has(a.sportType)) return false;
       return true;
     });
-  }, [activities, lakeBounds, watersportsOnly]);
+  }, [activities, watersportsOnly]);
 
   async function loadMore(reset: boolean) {
     setListStatus("loading");
@@ -141,7 +138,6 @@ export function StravaPanel({
         acc = acc.concat(res.activities);
         exhausted = res.activities.length < res.perPage;
         const matchCount = acc.filter((a) => {
-          if (!activityAtLake(a, lakeBounds ?? null)) return false;
           if (watersportsOnly && !WATERSPORT_TYPES.has(a.sportType)) return false;
           return true;
         }).length;
@@ -158,17 +154,18 @@ export function StravaPanel({
   }
 
   useEffect(() => {
-    if (!open || !status?.connected || !lakeBounds) return;
+    if (!open || !status?.connected) return;
     if (listStatus !== "idle") return;
     void loadMore(true);
-  }, [open, status?.connected, listStatus, lakeBounds]);
+  }, [open, status?.connected, listStatus]);
 
   async function onPick(activity: StravaActivity) {
     setLoadingId(activity.id);
     onError(null);
     try {
       const payload = await fetchStravaTrack(activity.id);
-      onTrack(gpxTrackFromStrava(payload));
+      const at = lakeForActivity(activity, lakes);
+      onTrack(gpxTrackFromStrava(payload), at?.id ?? null);
       setOpen(false);
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
@@ -209,9 +206,7 @@ export function StravaPanel({
       {open && (
         <div className="strava-panel" role="dialog" aria-label="Strava sessions">
           <div className="strava-panel-head">
-            <strong>
-              Sessions{lakeName ? ` · ${lakeName}` : ""}
-            </strong>
+            <strong>Sessions</strong>
             <button
               type="button"
               className="strava-icon-btn"
@@ -265,6 +260,7 @@ export function StravaPanel({
               <ul className="strava-list">
                 {visible.map((a) => {
                   const active = activeTrackLabel === a.name;
+                  const at = lakeForActivity(a, lakes);
                   return (
                     <li key={a.id}>
                       <button
@@ -278,6 +274,8 @@ export function StravaPanel({
                         </span>
                         <span className="strava-row-meta">
                           {formatWhen(a.startDate)}
+                          {" · "}
+                          {at?.name ?? "Unknown lake"}
                           {" · "}
                           {a.sportType}
                           {" · "}
@@ -297,8 +295,8 @@ export function StravaPanel({
               {listStatus === "ready" && visible.length === 0 && (
                 <p className="strava-note">
                   {watersportsOnly
-                    ? `No watersport sessions at ${lakeName ?? "this lake"} yet. Load more, or turn off Watersports.`
-                    : `No sessions at ${lakeName ?? "this lake"} yet. Load more to search further back.`}
+                    ? "No watersport sessions in this slice yet. Load more, or turn off Watersports."
+                    : "No sessions in this slice yet. Load more to search further back."}
                 </p>
               )}
               {listError && <p className="strava-note error">{listError}</p>}

@@ -1,12 +1,12 @@
 {
   "spotId": "ca-ab-keho-lake",
-  "ncols": 114,
-  "nrows": 64,
-  "west": -113.06932944478494,
-  "south": 49.92674153360517,
-  "east": -112.9484309775546,
-  "north": 49.9719502339725,
-  "cellSizeM": 75.0,
+  "ncols": 185,
+  "nrows": 120,
+  "west": -113.0668917116713,
+  "south": 49.9212540653491,
+  "east": -112.93575139854511,
+  "north": 49.97742948378948,
+  "cellSizeM": 50.0,
   "nodata": -1.0,
   "nDirs": 16,
   "directionsDeg": [
@@ -27,26 +27,27 @@
     315.0,
     337.5
   ],
+  "waterSurfaceM": 958.8,
   "crs": "EPSG:4326",
-  "projectedCrs": "EPSG:32612",
+  "projectedCrs": "PROJCS[\"Alberta Geological Survey 10TM, NAD83\",GEOGCS[\"unnamed\",DATUM[\"North_American_Datum_1983\",SPHEROID[\"Geodetic Reference System of 1980\",6378137,298.257222100911],AUTHORITY[\"EPSG\",\"6269\"]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-115],PARAMETER[\"scale_factor\",0.9992],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"METER\",1],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
   "source": {
-    "shoreline": "OpenStreetMap way 892487288 (ODbL)",
-    "bathymetry": "synthetic distance-from-shore (max=18.0m)",
-    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
-    "osmType": "way",
-    "osmId": 892487288
+    "shoreline": "AGS DIG 2008-0788",
+    "bathymetry_dem": "AGS DIG 2008-0450 (50 m Arc ASCII)",
+    "licence": "Open Government Licence - Alberta"
   },
   "files": {
     "depth": "depth.bin",
     "fetch": "fetch_16dir.bin",
     "shoreline": "shoreline.geojson",
-    "spot": "spot-profile.json"
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
   },
   "stats": {
-    "waterCells": 3887,
-    "depthMinM": 0.5,
-    "depthMaxM": 17.998947143554688,
-    "depthMeanM": 14.38038158416748,
-    "fetchMaxM": 7612.5
-  }
+    "waterCells": 7084,
+    "depthMinM": 0.20000000298023224,
+    "depthMaxM": 5.224800109863281,
+    "depthMeanM": 2.5484063625335693,
+    "fetchMaxM": 6875.0
+  },
+  "contourIntervalM": 1.0
 }

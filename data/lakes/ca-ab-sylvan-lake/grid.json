@@ -1,12 +1,12 @@
 {
   "spotId": "ca-ab-sylvan-lake",
-  "ncols": 165,
-  "nrows": 138,
-  "west": -114.25271208404224,
-  "south": 52.308413626545345,
-  "east": -114.06526093773836,
-  "north": 52.40571613500746,
-  "cellSizeM": 75.0,
+  "ncols": 278,
+  "nrows": 246,
+  "west": -114.26128289067087,
+  "south": 52.301300272401306,
+  "east": -114.05501722227397,
+  "north": 52.41336870322129,
+  "cellSizeM": 50.0,
   "nodata": -1.0,
   "nDirs": 16,
   "directionsDeg": [
@@ -27,26 +27,27 @@
     315.0,
     337.5
   ],
+  "waterSurfaceM": 934.0,
   "crs": "EPSG:4326",
-  "projectedCrs": "EPSG:32611",
+  "projectedCrs": "PROJCS[\"Alberta Geological Survey 10TM, NAD83\",GEOGCS[\"unnamed\",DATUM[\"North_American_Datum_1983\",SPHEROID[\"Geodetic Reference System of 1980\",6378137,298.257222100911],AUTHORITY[\"EPSG\",\"6269\"]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-115],PARAMETER[\"scale_factor\",0.9992],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"METER\",1],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
   "source": {
-    "shoreline": "OpenStreetMap way 142751697 (ODbL)",
-    "bathymetry": "synthetic distance-from-shore (max=18.0m)",
-    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
-    "osmType": "way",
-    "osmId": 142751697
+    "shoreline": "AGS DIG 2008-0853",
+    "bathymetry_dem": "AGS DIG 2008-0515 (50 m Arc ASCII)",
+    "licence": "Open Government Licence - Alberta"
   },
   "files": {
     "depth": "depth.bin",
     "fetch": "fetch_16dir.bin",
     "shoreline": "shoreline.geojson",
-    "spot": "spot-profile.json"
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
   },
   "stats": {
-    "waterCells": 7576,
-    "depthMinM": 0.5,
-    "depthMaxM": 17.84501075744629,
-    "depthMeanM": 13.184131622314453,
-    "fetchMaxM": 13612.5
-  }
+    "waterCells": 16887,
+    "depthMinM": 0.20000000298023224,
+    "depthMaxM": 18.377599716186523,
+    "depthMeanM": 9.337467193603516,
+    "fetchMaxM": 13525.0
+  },
+  "contourIntervalM": 2.0
 }

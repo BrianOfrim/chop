@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-ghost-lake",
+  "ncols": 169,
+  "nrows": 118,
+  "west": -114.88560271854979,
+  "south": 51.162644202984836,
+  "east": -114.70050433256726,
+  "north": 51.2455865226021,
+  "cellSizeM": 75.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32611",
+  "source": {
+    "shoreline": "OpenStreetMap (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=40.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 17639759
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 1984,
+    "depthMinM": 0.5,
+    "depthMaxM": 33.35917663574219,
+    "depthMeanM": 14.590158462524414,
+    "fetchMaxM": 6750.0
+  },
+  "contourIntervalM": 5.0
+}

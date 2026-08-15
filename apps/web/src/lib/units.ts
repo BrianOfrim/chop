@@ -137,6 +137,11 @@ export function formatWaveHeight(m: number, unit: WaveHeightUnit): string {
   return `${v.toFixed(0)} cm`;
 }
 
+export function formatDepth(m: number, unit: WaveHeightUnit): string {
+  if (unit === "ft") return `${(m * 3.28084).toFixed(1)} ft`;
+  return `${m.toFixed(1)} m`;
+}
+
 export function formatTemp(c: number, unit: TempUnit): string {
   return `${celsiusToTemp(c, unit).toFixed(1)} ${tempUnitLabel(unit)}`;
 }

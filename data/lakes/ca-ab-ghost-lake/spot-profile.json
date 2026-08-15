@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-ghost-lake",
+  "identity": {
+    "name": "Ghost Lake",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Cochrane / Calgary",
+    "latitude": 51.22,
+    "longitude": -114.91,
+    "elevationM": 1190,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf", "foil"],
+    "waterType": "inland_reservoir",
+    "summary": "Bow River reservoir west of Calgary. Chinook and gap-influenced wind; the main Calgary kite water. Cold. Depth is a shore-distance fill (AGS Ghost Lake is a different northern pond)."
+  },
+  "geometry": {
+    "shape": "elongated_reservoir",
+    "surroundingTerrain": "foothills",
+    "notes": "Level varies with hydro operations. Mountain-wave / chinook days can be very gusty."
+  },
+  "windRegime": {
+    "primaryType": "chinook_foehn",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": true,
+    "orographic": "foothills_gap",
+    "primaryDirections": ["W", "SW", "NW"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 51.22,
+      "longitude": -114.91,
+      "description": "Main basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "ghost-village",
+      "name": "Ghost Lake village / east",
+      "latitude": 51.215,
+      "longitude": -114.86,
+      "shore": "east",
+      "bestWindDirs": ["W", "SW", "NW"],
+      "notes": "Usual launch corridor; wetsuit year-round."
+    }
+  ]
+}

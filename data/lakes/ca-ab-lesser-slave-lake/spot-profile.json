@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-lesser-slave-lake",
+  "identity": {
+    "name": "Lesser Slave Lake",
+    "region": "Northern Alberta, Canada",
+    "nearestCity": "Slave Lake",
+    "latitude": 55.43,
+    "longitude": -115.00,
+    "elevationM": 577,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf"],
+    "waterType": "inland_lake",
+    "summary": "Huge northern lake with long fetch and real open-water chop. Intermediate+; hazards and remoteness. AGS bathymetry."
+  },
+  "geometry": {
+    "shape": "large_elongated",
+    "surroundingTerrain": "boreal_plain",
+    "notes": "Town of Slave Lake on the southeast shore. Canyon Creek / Widewater recreation corridor."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": ["W", "NW", "SW", "SE"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 55.43,
+      "longitude": -115.00,
+      "description": "Open east basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "slave-lake-town",
+      "name": "Slave Lake / Devonshire Beach area",
+      "latitude": 55.32,
+      "longitude": -114.78,
+      "shore": "southeast",
+      "bestWindDirs": ["NW", "W", "N"],
+      "notes": "Provincial park beach east of town."
+    }
+  ]
+}

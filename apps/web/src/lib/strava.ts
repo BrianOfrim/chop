@@ -74,6 +74,31 @@ export function activityAtLake(
   return false;
 }
 
+export type NamedLakeBounds = {
+  id: string;
+  name: string;
+  bounds: LakeBounds;
+};
+
+/** Smallest Chop lake whose padded bounds contain the activity start or end. */
+export function lakeForActivity(
+  activity: StravaActivity,
+  lakes: NamedLakeBounds[],
+): NamedLakeBounds | null {
+  const hits: Array<{ lake: NamedLakeBounds; area: number }> = [];
+  for (const lake of lakes) {
+    if (!activityAtLake(activity, lake.bounds)) continue;
+    const b = expandLakeBounds(lake.bounds);
+    hits.push({
+      lake,
+      area: (b.east - b.west) * (b.north - b.south),
+    });
+  }
+  if (hits.length === 0) return null;
+  hits.sort((a, b) => a.area - b.area);
+  return hits[0]!.lake;
+}
+
 export type StravaTrackPayload = {
   id: number;
   name: string;

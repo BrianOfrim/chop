@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-upper-kananaskis-lake",
+  "identity": {
+    "name": "Upper Kananaskis Lake",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Kananaskis / Canmore",
+    "latitude": 50.62,
+    "longitude": -115.15,
+    "elevationM": 1720,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "snowkite"],
+    "waterType": "inland_reservoir",
+    "summary": "High mountain reservoir in Peter Lougheed Provincial Park. Cold, gusty, scenic. AGS DEM. Nearby Spray Lakes is the more famous snowkite venue."
+  },
+  "geometry": {
+    "shape": "mountain_reservoir",
+    "surroundingTerrain": "alpine",
+    "notes": "Hydro reservoir; strong valley/gap winds. Short season for open water."
+  },
+  "windRegime": {
+    "primaryType": "gap_valley",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": true,
+    "orographic": "alpine_valley",
+    "primaryDirections": ["W", "SW", "NW"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 50.62,
+      "longitude": -115.15,
+      "description": "Main basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "north-day-use",
+      "name": "North shore day-use",
+      "latitude": 50.635,
+      "longitude": -115.14,
+      "shore": "north",
+      "bestWindDirs": ["S", "SW"],
+      "notes": "Parks day-use; cold water, alpine weather."
+    }
+  ]
+}

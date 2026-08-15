@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Build Chop lake assets from an OSM Overpass JSON dump (relation or way).
 
-Uses a synthetic distance-from-shore depth model when no DEM is available.
+Uses a synthetic distance-from-shore depth model when no AGS DEM is available.
+Prefer `scripts/rebuild-ags-lakes.py` / `build-lake-assets.py` for Alberta lakes
+in the AGS 2008 bathymetry series.
 
 Example:
   .venv/bin/python scripts/build-osm-lake-assets.py \\
@@ -16,6 +18,7 @@ import argparse
 import json
 import math
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -107,13 +110,22 @@ def polygon_from_osm(data: dict, osm_id: int, osm_type: str) -> Polygon:
         else:
             outer.append(ls)
 
-    merged = linemerge(unary_union(outer))
-    polys = list(polygonize(merged))
-    if not polys:
-        # fallback: try closed rings from individual ways
-        for wid, coords in ways.items():
-            if len(coords) >= 4 and coords[0] == coords[-1]:
-                polys.append(Polygon(coords))
+    union = unary_union(outer)
+    polys = []
+    if union.geom_type == "Polygon":
+        polys = [union]
+    elif union.geom_type == "MultiPolygon":
+        polys = list(union.geoms)
+    else:
+        try:
+            merged = linemerge(union)
+        except ValueError:
+            merged = union
+        polys = list(polygonize(merged))
+        if not polys:
+            for wid, coords in ways.items():
+                if len(coords) >= 4 and coords[0] == coords[-1]:
+                    polys.append(Polygon(coords))
     if not polys:
         raise SystemExit(f"Could not polygonize relation {osm_id}")
     lake = max(polys, key=lambda p: p.area)
@@ -265,6 +277,7 @@ def main() -> None:
             "fetch": "fetch_16dir.bin",
             "shoreline": "shoreline.geojson",
             "spot": "spot-profile.json",
+            "contours": "depth-contours.geojson",
         },
         "stats": {
             "waterCells": int(mask.sum()),
@@ -275,6 +288,10 @@ def main() -> None:
         },
     }
     (out / "grid.json").write_text(json.dumps(meta, indent=2) + "\n")
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from depth_contours import write_depth_contours
+
+    write_depth_contours(out)
     (out / "README.md").write_text(
         f"# {spot.get('identity', {}).get('name', out.name)}\n\n"
         f"Shoreline: {args.source_note} (`{args.osm_type}/{args.osm_id}`).\n"

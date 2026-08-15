@@ -2,3 +2,4 @@
 
 Shoreline: OpenStreetMap relation 9446148 (ODbL) (`relation/9446148`).
 Depth: synthetic (max 50.0 m).
+Contours: `depth-contours.geojson` (5 m) traced from that fill.
