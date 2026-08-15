@@ -810,6 +810,10 @@
   top: 3.05rem;
 }
 
+.overlay-toggle button {
+  padding: 0.38rem 0.55rem;
+}
+
 .sim-panel {
   position: absolute;
   top: 0.75rem;

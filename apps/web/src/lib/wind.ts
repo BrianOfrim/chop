@@ -59,6 +59,23 @@ function parseGemHours(data: GemHourlyResponse): WindHour[] {
   return hours;
 }
 
+async function fetchOpenMeteoJson(url: URL): Promise<GemHourlyResponse> {
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 800 * 2 ** (attempt - 1)));
+    }
+    const res = await globalThis.fetch(url);
+    if (res.status === 429 || res.status >= 500) {
+      lastErr = new Error(`Open-Meteo error ${res.status}`);
+      continue;
+    }
+    if (!res.ok) throw new Error(`Open-Meteo error ${res.status}`);
+    return (await res.json()) as GemHourlyResponse;
+  }
+  throw lastErr ?? new Error("Open-Meteo error");
+}
+
 /** GEM blend: HRDPS (~2.5 km) for ~48 h, then RDPS / global out to 7 days. */
 export async function fetchHrdpsWind(
   lat: number,
@@ -74,9 +91,7 @@ export async function fetchHrdpsWind(
   url.searchParams.set("past_days", "1");
   url.searchParams.set("models", "gem_seamless");
 
-  const res = await globalThis.fetch(url);
-  if (!res.ok) throw new Error(`Open-Meteo error ${res.status}`);
-  const data = (await res.json()) as GemHourlyResponse;
+  const data = await fetchOpenMeteoJson(url);
   return { model: "gem_seamless", hours: parseGemHours(data) };
 }
 
@@ -101,9 +116,7 @@ export async function fetchHrdpsWindRange(
   url.searchParams.set("end_date", endDate);
   url.searchParams.set("models", "gem_hrdps_continental");
 
-  const res = await globalThis.fetch(url);
-  if (!res.ok) throw new Error(`Open-Meteo error ${res.status}`);
-  const data = (await res.json()) as GemHourlyResponse;
+  const data = await fetchOpenMeteoJson(url);
   const hours = parseGemHours(data);
   if (hours.length === 0) {
     throw new Error(`No HRDPS hours returned for ${startDate}–${endDate}`);

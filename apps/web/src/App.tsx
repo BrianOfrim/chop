@@ -21,6 +21,13 @@ import {
   type WindHour,
 } from "./lib/wind";
 import {
+  fetchAlbertaWindField,
+  fetchAlbertaWindFieldRange,
+  sliceWindField,
+  uniformWindSlice,
+  type WindField,
+} from "./lib/windField";
+import {
   fetchLakeSurfaceTemp,
   type LakeSurfaceTemp,
 } from "./lib/lswt";
@@ -144,6 +151,18 @@ export default function App() {
   const [forecastRange, setForecastRange] = useState<ForecastRangeHours>(() =>
     typeof window !== "undefined" ? loadForecastRange() : 72,
   );
+  const [forecastWindField, setForecastWindField] = useState<WindField | null>(
+    null,
+  );
+  const [forecastWindStatus, setForecastWindStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const rangeWindCacheRef = useRef<Map<string, WindField>>(new Map());
+  const [rangeWindField, setRangeWindField] = useState<WindField | null>(null);
+  const [rangeWindStatus, setRangeWindStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [windOverlayOn, setWindOverlayOn] = useState(false);
 
   function updateUnits(patch: Partial<UnitPrefs>) {
     setUnits((prev) => {
@@ -169,6 +188,27 @@ export default function App() {
       .then((list) => setLakes(list.filter((l) => l.enabled)))
       .catch((e) => setError(String(e)));
   }, []);
+
+  useEffect(() => {
+    if (!windOverlayOn || !forecast || forecastWindField) return;
+    let cancelled = false;
+    setForecastWindStatus("loading");
+    fetchAlbertaWindField()
+      .then((field) => {
+        if (cancelled) return;
+        setForecastWindField(field);
+        setForecastWindStatus("ready");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("Alberta wind field failed", e);
+        setForecastWindField(null);
+        setForecastWindStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [windOverlayOn, forecast, forecastWindField]);
 
   useEffect(() => {
     if (lakes.length === 0) return;
@@ -512,6 +552,90 @@ export default function App() {
           ? historyWind
           : forecastWind;
 
+  const neededWindRange = useMemo(() => {
+    if (!windOverlayOn) return null;
+    if (mode === "history") {
+      if (historyHours.length === 0) return null;
+      return {
+        startDate: historyHours[0]!.time.slice(0, 10),
+        endDate: historyHours[historyHours.length - 1]!.time.slice(0, 10),
+      };
+    }
+    if (mode === "review" && gpxTrack) {
+      if (forecastWindStatus === "loading") return null;
+      const range = sessionDateRange(gpxTrack);
+      if (!range) return null;
+      const t = sessionSample?.time ?? gpxTrack.startTime;
+      if (t && forecastWindField && sliceWindField(forecastWindField, t)) {
+        return null;
+      }
+      return range;
+    }
+    return null;
+  }, [windOverlayOn, mode, historyHours, gpxTrack, sessionSample, forecastWindField, forecastWindStatus]);
+
+  useEffect(() => {
+    if (!neededWindRange) {
+      setRangeWindField(null);
+      setRangeWindStatus("idle");
+      return;
+    }
+    const key = `${neededWindRange.startDate}_${neededWindRange.endDate}`;
+    const cached = rangeWindCacheRef.current.get(key);
+    if (cached) {
+      setRangeWindField(cached);
+      setRangeWindStatus("ready");
+      return;
+    }
+    let cancelled = false;
+    setRangeWindStatus("loading");
+    fetchAlbertaWindFieldRange(neededWindRange.startDate, neededWindRange.endDate)
+      .then((field) => {
+        if (cancelled) return;
+        rangeWindCacheRef.current.set(key, field);
+        setRangeWindField(field);
+        setRangeWindStatus("ready");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("Alberta wind field range failed", e);
+        setRangeWindField(null);
+        setRangeWindStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [neededWindRange]);
+
+  const windSlice = useMemo(() => {
+    if (!wind) return null;
+    if (mode === "sim") return uniformWindSlice(wind);
+    const nearest = (field: WindField | null) =>
+      field && wind.time !== "sim"
+        ? sliceWindField(field, wind.time, Number.POSITIVE_INFINITY)
+        : null;
+    const sliced =
+      mode === "history"
+        ? nearest(rangeWindField)
+        : mode === "review"
+          ? nearest(forecastWindField) ?? nearest(rangeWindField)
+          : nearest(forecastWindField);
+    return sliced ?? uniformWindSlice(wind);
+  }, [mode, wind, forecastWindField, rangeWindField]);
+
+  const windFieldStatus =
+    mode === "sim"
+      ? ("ready" as const)
+      : mode === "history"
+        ? rangeWindStatus === "idle"
+          ? historyStatus === "loading"
+            ? ("loading" as const)
+            : historyStatus
+          : rangeWindStatus
+        : mode === "review" && rangeWindStatus !== "idle"
+          ? rangeWindStatus
+          : forecastWindStatus;
+
   const selectedHsM = useMemo(() => {
     if (mode === "review" && sessionSample) return sessionSample.hsM;
     if (!grids || !wind) return null;
@@ -702,6 +826,9 @@ export default function App() {
             }}
             onChoosePoint={setForecastPoint}
             onClearPoint={() => setForecastPoint(null)}
+            windSlice={windSlice}
+            windFieldStatus={windFieldStatus}
+            onOverlayChange={(id) => setWindOverlayOn(id === "wind")}
           />
         )}
         <WindSimPanel
