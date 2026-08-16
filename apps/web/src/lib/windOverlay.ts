@@ -1,7 +1,8 @@
 import albertaMask from "../data/albertaMask.json";
 import { DEFAULT_WIND_SCALE } from "./colorScales";
-import { windColor, windColorRgb, WIND_COLOR_MAX_MPS } from "./windScale";
+import { windColor, WIND_COLOR_MAX_MPS } from "./windScale";
 import {
+  WIND_FIELD_STEP_M,
   windFieldExtent,
   windFieldSize,
   windGridLat,
@@ -9,7 +10,7 @@ import {
   type WindFieldSlice,
 } from "./windField";
 
-export const WIND_CANVAS_SCALE = 12;
+export const WIND_CANVAS_SCALE = 32;
 
 const ALBERTA_OUTLINE = (albertaMask as GeoJSON.FeatureCollection).features.find(
   (f) => f.properties?.kind === "outline",
@@ -219,7 +220,7 @@ function ringContains(ring: number[][], lon: number, lat: number): boolean {
   return inside;
 }
 
-function inAlberta(lon: number, lat: number): boolean {
+export function pointInAlberta(lon: number, lat: number): boolean {
   const g = ALBERTA_OUTLINE?.geometry;
   if (!g) return true;
   const polys: number[][][][] =
@@ -267,6 +268,28 @@ function metersPerPixel(lat: number, zoom: number): number {
   return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
 }
 
+const ARROW_SHAFT_PX = 7.5;
+const ARROW_HEAD_PX = 2.75;
+/** Aim for this many screen pixels between neighboring shown sample arrows. */
+const ARROW_TARGET_SPACING_PX = 40;
+
+function nearestPow2(n: number): number {
+  if (n <= 1) return 1;
+  return 2 ** Math.round(Math.log2(n));
+}
+
+/** Power-of-two subsample so on-screen arrow density stays near the target. */
+function arrowStride(
+  zoom: number,
+  lat: number,
+  ncols: number,
+  nrows: number,
+): number {
+  const spacingPx = WIND_FIELD_STEP_M / Math.max(metersPerPixel(lat, zoom), 1e-6);
+  const maxStride = 2 ** Math.floor(Math.log2(Math.max(ncols, nrows, 2) - 1));
+  return Math.min(maxStride, nearestPow2(ARROW_TARGET_SPACING_PX / spacingPx));
+}
+
 /** Shaft + V head, pointing where the wind is going. */
 function simpleArrowGeometry(
   lon: number,
@@ -275,8 +298,8 @@ function simpleArrowGeometry(
   zoom: number,
 ): GeoJSON.MultiLineString {
   const mpx = metersPerPixel(lat, zoom);
-  const shaftM = 15 * mpx;
-  const headM = 5.5 * mpx;
+  const shaftM = ARROW_SHAFT_PX * mpx;
+  const headM = ARROW_HEAD_PX * mpx;
   const toBearing = (fromDeg + 180) % 360;
   const tip = destinationLngLat(lon, lat, shaftM, toBearing);
   const left = destinationLngLat(tip[0], tip[1], headM, toBearing + 148);
@@ -292,27 +315,32 @@ function simpleArrowGeometry(
 }
 
 /**
- * One simple arrow per HRDPS sample. Direction is in the line geometry.
+ * One simple arrow per HRDPS sample (no interpolation). Direction is in the
+ * line geometry. Zoomed-out views keep a nested subset (every 2nd, 4th, …).
  */
 export function windArrowsGeoJSON(
   slice: WindFieldSlice,
   zoom: number,
 ): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
+  const midLat = (slice.north + slice.south) / 2;
+  const stride = arrowStride(zoom, midLat, slice.ncols, slice.nrows);
+  const originI = Math.floor((slice.ncols - 1) / 2);
+  const originJ = Math.floor((slice.nrows - 1) / 2);
   for (let j = 0; j < slice.nrows; j++) {
+    if (Math.abs(j - originJ) % stride !== 0) continue;
     for (let i = 0; i < slice.ncols; i++) {
+      if (Math.abs(i - originI) % stride !== 0) continue;
       const cell = sampleCell(slice, i, j);
       if (!cell) continue;
       const lon = windGridLon(i);
       const lat = windGridLat(j);
-      if (!inAlberta(lon, lat)) continue;
+      if (!pointInAlberta(lon, lat)) continue;
       features.push({
         type: "Feature",
-        id: j * slice.ncols + i,
         properties: {
           fromDeg: cell.d,
           speed: cell.s,
-          color: windColorRgb(cell.s),
         },
         geometry: simpleArrowGeometry(lon, lat, cell.d, zoom),
       });

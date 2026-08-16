@@ -1,0 +1,53 @@
+{
+  "spotId": "ca-ab-coal-lake",
+  "ncols": 259,
+  "nrows": 391,
+  "west": -113.39401131032886,
+  "south": 52.98980238084865,
+  "east": -113.19375110337863,
+  "north": 53.16830718537725,
+  "cellSizeM": 50.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "waterSurfaceM": 702.0,
+  "crs": "EPSG:4326",
+  "projectedCrs": "PROJCS[\"Alberta Geological Survey 10TM, NAD83\",GEOGCS[\"unnamed\",DATUM[\"North_American_Datum_1983\",SPHEROID[\"Geodetic Reference System of 1980\",6378137,298.257222100911],AUTHORITY[\"EPSG\",\"6269\"]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-115],PARAMETER[\"scale_factor\",0.9992],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",0],UNIT[\"METER\",1],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
+  "source": {
+    "shoreline": "AGS DIG 2008-0740",
+    "bathymetry_dem": "AGS DIG 2008-0402 (50 m Arc ASCII)",
+    "licence": "Open Government Licence - Alberta"
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 4763,
+    "depthMinM": 0.20000000298023224,
+    "depthMaxM": 8.190099716186523,
+    "depthMeanM": 3.164839267730713,
+    "fetchMaxM": 9700.0
+  },
+  "contourIntervalM": 1.0
+}

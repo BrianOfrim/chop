@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-driedmeat-lake",
+  "identity": {
+    "name": "Driedmeat Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Camrose",
+    "latitude": 52.865,
+    "longitude": -112.75,
+    "elevationM": 684,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf"],
+    "waterType": "inland_lake",
+    "summary": "Long shallow Battle River ribbon lake south of Camrose. Fetch is along the long axis; cross-lake fetch is short. Depth is a shore-distance fill (no AGS DEM)."
+  },
+  "geometry": {
+    "shape": "elongated_narrow",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Glacial meltwater channel. Very shallow (a few metres). Level is weir-controlled for Camrose water supply."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": ["NW", "SE", "N"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 52.865,
+      "longitude": -112.75,
+      "description": "Mid-lake"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "tillicum-beach",
+      "name": "Tillicum Beach",
+      "latitude": 52.902,
+      "longitude": -112.768,
+      "shore": "east",
+      "bestWindDirs": ["W", "NW", "SW"],
+      "notes": "Hamlet / beach on the north basin. Confirm public access."
+    }
+  ]
+}

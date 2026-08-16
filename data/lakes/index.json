@@ -29,6 +29,20 @@
       "path": "/lakes/ca-ab-wizard-lake"
     },
     {
+      "id": "ca-ab-coal-lake",
+      "name": "Coal Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-coal-lake"
+    },
+    {
+      "id": "ca-ab-driedmeat-lake",
+      "name": "Driedmeat Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-driedmeat-lake"
+    },
+    {
       "id": "ca-ab-lac-ste-anne",
       "name": "Lac Ste. Anne",
       "region": "Alberta, Canada",

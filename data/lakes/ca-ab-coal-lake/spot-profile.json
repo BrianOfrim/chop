@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-coal-lake",
+  "identity": {
+    "name": "Coal Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Wetaskiwin / Edmonton",
+    "latitude": 53.08,
+    "longitude": -113.29,
+    "elevationM": 702,
+    "timezone": "America/Edmonton",
+    "sports": ["kite", "wing", "windsurf"],
+    "waterType": "inland_reservoir",
+    "summary": "Long north–south reservoir between Wetaskiwin and Edmonton. Fetch is along the long axis; cross-lake fetch is short."
+  },
+  "geometry": {
+    "shape": "elongated_narrow",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Pipestone Creek reservoir. Level can vary. Best fetch on N or S wind."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": ["N", "S", "NW"]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 53.08,
+      "longitude": -113.29,
+      "description": "Mid-lake"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "coal-lake-east",
+      "name": "Coal Lake East Recreation Area",
+      "latitude": 53.063,
+      "longitude": -113.268,
+      "shore": "east",
+      "bestWindDirs": ["W", "NW", "SW"],
+      "notes": "Provincial recreation area on the east shore. Confirm access and ice."
+    }
+  ]
+}

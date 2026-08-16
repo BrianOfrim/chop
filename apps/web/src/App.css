@@ -223,7 +223,7 @@
 
 .hover-card {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   pointer-events: none;
   max-width: 220px;
   background: var(--panel);
@@ -790,7 +790,7 @@
 .basemap-toggle button {
   border: none;
   background: transparent;
-  padding: 0.38rem 0.7rem;
+  padding: 0.38rem 0.55rem;
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--muted);
@@ -810,8 +810,26 @@
   top: 3.05rem;
 }
 
+.wind-glyph-toggle {
+  top: 5.35rem;
+}
+
 .overlay-toggle button {
   padding: 0.38rem 0.55rem;
+}
+
+.wind-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  display: none;
+}
+
+.wind-particles.is-on {
+  display: block;
 }
 
 .sim-panel {

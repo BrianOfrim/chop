@@ -162,7 +162,7 @@ export default function App() {
   const [rangeWindStatus, setRangeWindStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
-  const [windOverlayOn, setWindOverlayOn] = useState(false);
+  const [needWindField, setNeedWindField] = useState(false);
 
   function updateUnits(patch: Partial<UnitPrefs>) {
     setUnits((prev) => {
@@ -190,12 +190,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!windOverlayOn || !forecast || forecastWindField) return;
+    if (!needWindField || !forecast || forecastWindField) return;
     let cancelled = false;
     setForecastWindStatus("loading");
     fetchAlbertaWindField()
       .then((field) => {
-        if (cancelled) return;
         setForecastWindField(field);
         setForecastWindStatus("ready");
       })
@@ -208,7 +207,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [windOverlayOn, forecast, forecastWindField]);
+  }, [needWindField, forecast, forecastWindField]);
 
   useEffect(() => {
     if (lakes.length === 0) return;
@@ -553,7 +552,7 @@ export default function App() {
           : forecastWind;
 
   const neededWindRange = useMemo(() => {
-    if (!windOverlayOn) return null;
+    if (!needWindField) return null;
     if (mode === "history") {
       if (historyHours.length === 0) return null;
       return {
@@ -572,7 +571,7 @@ export default function App() {
       return range;
     }
     return null;
-  }, [windOverlayOn, mode, historyHours, gpxTrack, sessionSample, forecastWindField, forecastWindStatus]);
+  }, [needWindField, mode, historyHours, gpxTrack, sessionSample, forecastWindField, forecastWindStatus]);
 
   useEffect(() => {
     if (!neededWindRange) {
@@ -620,7 +619,7 @@ export default function App() {
         : mode === "review"
           ? nearest(forecastWindField) ?? nearest(rangeWindField)
           : nearest(forecastWindField);
-    return sliced ?? uniformWindSlice(wind);
+    return sliced;
   }, [mode, wind, forecastWindField, rangeWindField]);
 
   const windFieldStatus =
@@ -828,7 +827,9 @@ export default function App() {
             onClearPoint={() => setForecastPoint(null)}
             windSlice={windSlice}
             windFieldStatus={windFieldStatus}
-            onOverlayChange={(id) => setWindOverlayOn(id === "wind")}
+            onOverlayChange={(id) =>
+              setNeedWindField(id === "wind" || id === "waves")
+            }
           />
         )}
         <WindSimPanel

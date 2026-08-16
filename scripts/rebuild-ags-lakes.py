@@ -73,6 +73,16 @@ LAKES = [
         "dem_label": "AGS DIG 2008-0533 (50 m Arc ASCII)",
     },
     {
+        "id": "ca-ab-coal-lake",
+        "dem": "0402",
+        "boundary": "0740",
+        "contours": "0571",
+        "shore": "AGS DIG 2008-0740",
+        "dem_label": "AGS DIG 2008-0402 (50 m Arc ASCII)",
+    },
+    # Driedmeat Lake is not in the AGS 2008 series.
+    # Build from OSM: scripts/build-osm-lake-assets.py --osm-id 1362845
+    {
         "id": "ca-ab-lac-ste-anne",
         "dem": "0368",
         "boundary": "0706",

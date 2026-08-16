@@ -32,6 +32,7 @@ import {
 import { formatWind, formatWindMapLabel, type WindHour } from "../lib/wind";
 import { windColorRgb, WIND_COLOR_MAX_MPS } from "../lib/windScale";
 import {
+  inWindFieldExtent,
   sampleWindField,
   type WindFieldSlice,
 } from "../lib/windField";
@@ -43,6 +44,13 @@ import {
   windCanvasSize,
 } from "../lib/windOverlay";
 import {
+  clearParticleCanvas,
+  createParticleField,
+  prefersReducedWindMotion,
+  stepWindParticles,
+  WIND_STREAK_COLOR,
+} from "../lib/windParticles";
+import {
   formatDepth,
   formatWaveHeight,
   formatWindSpeed,
@@ -52,6 +60,15 @@ import { DEFAULT_DEPTH_SCALE, DEFAULT_WAVE_SCALE, DEFAULT_WIND_SCALE, scaleGradi
 import type { GpxTrack } from "../lib/gpx";
 
 type OverlayId = "waves" | "depth" | "wind";
+type WindGlyphId = "arrows" | "particles";
+
+function showsWindHeatmap(overlay: OverlayId): boolean {
+  return overlay === "wind";
+}
+
+function showsWindGlyphs(overlay: OverlayId): boolean {
+  return overlay === "waves" || overlay === "wind";
+}
 
 type Props = {
   grids: LakeGrids;
@@ -96,14 +113,17 @@ type HoverInfo = {
   gustMps: number | null;
 };
 
-type BasemapId = "map" | "satellite";
+type BasemapId = "map" | "satellite" | "topo";
 
 const BASEMAP_KEY = "chop.basemap";
 const OVERLAY_KEY = "chop.mapOverlay";
+const WIND_GLYPH_KEY = "chop.windGlyph";
 
 function loadBasemap(): BasemapId {
   try {
-    return localStorage.getItem(BASEMAP_KEY) === "satellite" ? "satellite" : "map";
+    const v = localStorage.getItem(BASEMAP_KEY);
+    if (v === "satellite" || v === "topo") return v;
+    return "map";
   } catch {
     return "map";
   }
@@ -130,6 +150,24 @@ function loadOverlay(): OverlayId {
 function saveOverlay(id: OverlayId): void {
   try {
     localStorage.setItem(OVERLAY_KEY, id);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function loadWindGlyph(): WindGlyphId {
+  try {
+    if (localStorage.getItem(WIND_GLYPH_KEY) === "arrows") return "arrows";
+    if (localStorage.getItem(WIND_GLYPH_KEY) === "particles") return "particles";
+    return prefersReducedWindMotion() ? "arrows" : "particles";
+  } catch {
+    return "particles";
+  }
+}
+
+function saveWindGlyph(id: WindGlyphId): void {
+  try {
+    localStorage.setItem(WIND_GLYPH_KEY, id);
   } catch {
     // ignore quota / private mode
   }
@@ -166,25 +204,86 @@ function applyLakeHighlight(
   }
 }
 
+const BASEMAP_LAYER_IDS = [
+  "basemap-satellite",
+  "basemap-map",
+  "basemap-topo-hillshade",
+  "basemap-topo",
+] as const;
+
+function ensureBasemapLayers(map: MapLibreMap): void {
+  const beforeId = map.getLayer("alberta-mask") ? "alberta-mask" : undefined;
+  if (!map.getSource("topo-hillshade")) {
+    map.addSource("topo-hillshade", {
+      type: "raster",
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+      ],
+      tileSize: 256,
+      maxzoom: 16,
+      attribution:
+        "Tiles &copy; Esri — Source: Esri, USGS, NOAA, and the GIS User Community",
+    });
+  }
+  if (!map.getSource("topo")) {
+    map.addSource("topo", {
+      type: "raster",
+      tiles: [
+        "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://c.tile.opentopomap.org/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      maxzoom: 17,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
+    });
+  }
+  if (!map.getLayer("basemap-topo-hillshade")) {
+    map.addLayer(
+      {
+        id: "basemap-topo-hillshade",
+        type: "raster",
+        source: "topo-hillshade",
+        layout: { visibility: "none" },
+        paint: { "raster-opacity": 1 },
+        minzoom: 0,
+        maxzoom: 22,
+      },
+      beforeId,
+    );
+  }
+  if (!map.getLayer("basemap-topo")) {
+    map.addLayer(
+      {
+        id: "basemap-topo",
+        type: "raster",
+        source: "topo",
+        layout: { visibility: "none" },
+        paint: { "raster-opacity": 0.72 },
+        minzoom: 0,
+        maxzoom: 22,
+      },
+      beforeId,
+    );
+  }
+}
+
 function applyBasemap(
   map: MapLibreMap,
   id: BasemapId,
   selectedLakeId: string,
 ): void {
-  if (map.getLayer("basemap-map")) {
-    map.setLayoutProperty(
-      "basemap-map",
-      "visibility",
-      id === "map" ? "visible" : "none",
-    );
-  }
-  if (map.getLayer("basemap-satellite")) {
-    map.setLayoutProperty(
-      "basemap-satellite",
-      "visibility",
-      id === "satellite" ? "visible" : "none",
-    );
-  }
+  ensureBasemapLayers(map);
+  const vis = (layer: (typeof BASEMAP_LAYER_IDS)[number], on: boolean) => {
+    if (map.getLayer(layer)) {
+      map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
+    }
+  };
+  vis("basemap-map", id === "map");
+  vis("basemap-satellite", id === "satellite");
+  vis("basemap-topo-hillshade", id === "topo");
+  vis("basemap-topo", id === "topo");
   if (map.getLayer("lakes-all-line")) {
     map.setPaintProperty(
       "lakes-all-line",
@@ -226,7 +325,7 @@ function applyBasemap(
   }
 }
 
-/** Raster basemaps — Carto light + Esri World Imagery. Overlay layers are added after load. */
+/** Raster basemaps — Carto light, Esri World Imagery, Esri hillshade + OpenTopoMap. Overlay layers are added after load. */
 function makeStyle(basemap: BasemapId): StyleSpecification {
   return {
     version: 8,
@@ -253,8 +352,35 @@ function makeStyle(basemap: BasemapId): StyleSpecification {
         attribution:
           "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
       },
+      "topo-hillshade": {
+        type: "raster",
+        tiles: [
+          "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        maxzoom: 16,
+        attribution:
+          "Tiles &copy; Esri — Source: Esri, USGS, NOAA, and the GIS User Community",
+      },
+      topo: {
+        type: "raster",
+        tiles: [
+          "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+          "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
+          "https://c.tile.opentopomap.org/{z}/{x}/{y}.png",
+        ],
+        tileSize: 256,
+        maxzoom: 17,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
+      },
     },
     layers: [
+      {
+        id: "background",
+        type: "background",
+        paint: { "background-color": "#d7cbb0" },
+      },
       {
         id: "basemap-satellite",
         type: "raster",
@@ -270,6 +396,24 @@ function makeStyle(basemap: BasemapId): StyleSpecification {
         layout: { visibility: basemap === "map" ? "visible" : "none" },
         minzoom: 0,
         maxzoom: 20,
+      },
+      {
+        id: "basemap-topo-hillshade",
+        type: "raster",
+        source: "topo-hillshade",
+        layout: { visibility: basemap === "topo" ? "visible" : "none" },
+        paint: { "raster-opacity": 1 },
+        minzoom: 0,
+        maxzoom: 22,
+      },
+      {
+        id: "basemap-topo",
+        type: "raster",
+        source: "topo",
+        layout: { visibility: basemap === "topo" ? "visible" : "none" },
+        paint: { "raster-opacity": 0.72 },
+        minzoom: 0,
+        maxzoom: 22,
       },
     ],
   };
@@ -592,6 +736,15 @@ const EMPTY_FC: GeoJSON.FeatureCollection = {
   features: [],
 };
 
+function spatialWindSlice(
+  slice: WindFieldSlice | null | undefined,
+  allowUniform: boolean,
+): WindFieldSlice | null {
+  if (!slice) return null;
+  if (slice.uniform && !allowUniform) return null;
+  return slice;
+}
+
 function ensureWindArrowsSource(map: MapLibreMap) {
   if (!map.getSource("wind-arrows")) {
     map.addSource("wind-arrows", { type: "geojson", data: EMPTY_FC });
@@ -601,30 +754,12 @@ function ensureWindArrowsSource(map: MapLibreMap) {
 function ensureWindArrowsLineLayer(map: MapLibreMap, visible: boolean) {
   ensureWindArrowsSource(map);
   const vis = visible ? "visible" : "none";
-  for (const id of ["wind-arrows", "wind-arrows-case"] as const) {
-    const layer = map.getLayer(id);
-    if (layer && layer.type !== "line") {
-      map.removeLayer(id);
-    }
+  if (map.getLayer("wind-arrows-case")) {
+    map.removeLayer("wind-arrows-case");
   }
-  if (!map.getLayer("wind-arrows-case")) {
-    map.addLayer({
-      id: "wind-arrows-case",
-      type: "line",
-      source: "wind-arrows",
-      layout: {
-        visibility: vis,
-        "line-cap": "round",
-        "line-join": "round",
-      },
-      paint: {
-        "line-color": "rgba(255,255,255,0.9)",
-        "line-width": 3.1,
-        "line-opacity": 0.88,
-      },
-    });
-  } else {
-    map.setLayoutProperty("wind-arrows-case", "visibility", vis);
+  const leftover = map.getLayer("wind-arrows");
+  if (leftover && leftover.type !== "line") {
+    map.removeLayer("wind-arrows");
   }
   if (!map.getLayer("wind-arrows")) {
     map.addLayer({
@@ -637,13 +772,14 @@ function ensureWindArrowsLineLayer(map: MapLibreMap, visible: boolean) {
         "line-join": "round",
       },
       paint: {
-        "line-color": ["get", "color"],
-        "line-width": 1.45,
-        "line-opacity": 0.96,
+        "line-color": WIND_STREAK_COLOR,
+        "line-width": 1.7,
+        "line-opacity": 1,
       },
     });
   } else {
     map.setLayoutProperty("wind-arrows", "visibility", vis);
+    map.setPaintProperty("wind-arrows", "line-color", WIND_STREAK_COLOR);
   }
 }
 
@@ -783,6 +919,8 @@ export function MapView({
   const mapRef = useRef<MapLibreMap | null>(null);
   const hsCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const windParticleCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const windParticlesRef = useRef(createParticleField());
   const albertaWindMaskRef = useRef<HTMLCanvasElement | null>(null);
   const shoreMaskRef = useRef<HTMLCanvasElement | null>(null);
   const hsRef = useRef<Float32Array | null>(null);
@@ -818,10 +956,17 @@ export function MapView({
   const [overlay, setOverlay] = useState<OverlayId>(() =>
     typeof window !== "undefined" ? loadOverlay() : "waves",
   );
+  const [windGlyph, setWindGlyph] = useState<WindGlyphId>(() =>
+    typeof window !== "undefined" ? loadWindGlyph() : "particles",
+  );
   const overlayRef = useRef(overlay);
+  const windGlyphRef = useRef(windGlyph);
   const windSliceRef = useRef(windSlice);
+  const simulatingRef = useRef(simulating);
   overlayRef.current = overlay;
+  windGlyphRef.current = windGlyph;
   windSliceRef.current = windSlice;
+  simulatingRef.current = simulating;
 
   useEffect(() => {
     onOverlayChange?.(overlay);
@@ -1110,7 +1255,7 @@ export function MapView({
         type: "symbol",
         source: "wind-dir",
         layout: {
-          visibility: overlay === "wind" ? "none" : "visible",
+          visibility: showsWindGlyphs(overlay) ? "none" : "visible",
           "icon-image": "wind-arrow",
           "icon-size": [
             "interpolate",
@@ -1323,11 +1468,19 @@ export function MapView({
       const g = gridsRef.current;
       const depthM = sampleGrid(g.depth, g.meta, lng, lat);
       const onWater = depthM != null && depthM > 0;
-      const field =
-        overlayRef.current === "wind" && windSliceRef.current
-          ? sampleWindField(windSliceRef.current, lng, lat)
-          : null;
-      if (!onWater && !field) {
+      const slice = spatialWindSlice(
+        windSliceRef.current,
+        simulatingRef.current,
+      );
+      const field = slice ? sampleWindField(slice, lng, lat) : null;
+      const windMode = overlayRef.current === "wind";
+      if (windMode) {
+        const overField = slice ? inWindFieldExtent(slice, lng, lat) : false;
+        if (!overField && !onWater && !field) {
+          setHover(null);
+          return;
+        }
+      } else if (!onWater) {
         setHover(null);
         return;
       }
@@ -1356,9 +1509,9 @@ export function MapView({
         hsM,
         depthM: onWater ? depthM! : 0,
         fetchM,
-        windSpeedMps: field?.speedMps ?? currentWind?.windSpeedMps ?? null,
-        windDirDeg: field?.dirDeg ?? currentWind?.windDirDeg ?? null,
-        gustMps: field ? null : currentWind?.gustMps ?? null,
+        windSpeedMps: field?.speedMps ?? (windMode ? null : currentWind?.windSpeedMps ?? null),
+        windDirDeg: field?.dirDeg ?? (windMode ? null : currentWind?.windDirDeg ?? null),
+        gustMps: field || windMode ? null : currentWind?.gustMps ?? null,
       });
     });
 
@@ -1439,6 +1592,7 @@ export function MapView({
       mapRef.current = null;
       hsCanvasRef.current = null;
       windCanvasRef.current = null;
+      windParticlesRef.current = createParticleField();
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1580,28 +1734,26 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const showWind = overlay === "wind";
-    const showHs = !showWind && spot.spotId === selectedLakeId;
+    const showHeatmap = showsWindHeatmap(overlay);
+    const showGlyphs = showsWindGlyphs(overlay);
+    const showHs = !showHeatmap && spot.spotId === selectedLakeId;
     if (map.getLayer("hs-layer")) {
       map.setLayoutProperty("hs-layer", "visibility", showHs ? "visible" : "none");
     }
     if (map.getLayer("wind-field")) {
-      map.setLayoutProperty("wind-field", "visibility", showWind ? "visible" : "none");
+      map.setLayoutProperty("wind-field", "visibility", showHeatmap ? "visible" : "none");
     }
     try {
-      ensureWindArrowsLineLayer(map, showWind);
+      ensureWindArrowsLineLayer(map, showGlyphs && windGlyph === "arrows");
     } catch (err) {
       console.error("Wind arrows layer failed", err);
     }
-    if (showWind) {
-      if (map.getLayer("wind-field")) map.moveLayer("wind-field");
-      if (map.getLayer("wind-arrows-case")) map.moveLayer("wind-arrows-case");
-      if (map.getLayer("wind-arrows")) map.moveLayer("wind-arrows");
-    }
+    if (showHeatmap && map.getLayer("wind-field")) map.moveLayer("wind-field");
+    if (showGlyphs && map.getLayer("wind-arrows")) map.moveLayer("wind-arrows");
     if (map.getLayer("wind-dir")) {
-      map.setLayoutProperty("wind-dir", "visibility", showWind ? "none" : "visible");
+      map.setLayoutProperty("wind-dir", "visibility", showGlyphs ? "none" : "visible");
     }
-  }, [overlay, ready, spot.spotId, selectedLakeId]);
+  }, [overlay, ready, spot.spotId, selectedLakeId, windGlyph]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1610,43 +1762,123 @@ export function MapView({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const apply = () => {
-      if (overlayRef.current !== "wind" || !windSliceRef.current) {
+      const slice = spatialWindSlice(
+        windSliceRef.current,
+        simulatingRef.current,
+      );
+      const overlayNow = overlayRef.current;
+      const showHeatmap = showsWindHeatmap(overlayNow);
+      const showGlyphs = showsWindGlyphs(overlayNow);
+      if (!slice || (!showHeatmap && !showGlyphs)) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const src = map.getSource("wind-arrows") as GeoJSONSource | undefined;
         src?.setData(EMPTY_FC);
         return;
       }
-      let mask = albertaWindMaskRef.current;
-      if (!mask) {
-        mask = buildAlbertaWindMask();
-        albertaWindMaskRef.current = mask;
+      if (showHeatmap) {
+        let mask = albertaWindMaskRef.current;
+        if (!mask) {
+          mask = buildAlbertaWindMask();
+          albertaWindMaskRef.current = mask;
+        }
+        paintWindField(ctx, slice, mask);
+        map.triggerRepaint();
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        map.triggerRepaint();
       }
-      const slice = windSliceRef.current;
-      paintWindField(ctx, slice, mask);
-      map.triggerRepaint();
+      applyArrows();
+      if (
+        showsWindGlyphs(overlayNow) &&
+        windGlyphRef.current === "arrows" &&
+        map.getLayer("wind-arrows")
+      ) {
+        map.moveLayer("wind-arrows");
+      }
+    };
+    const applyArrows = () => {
+      const slice = spatialWindSlice(
+        windSliceRef.current,
+        simulatingRef.current,
+      );
+      const showArrows =
+        showsWindGlyphs(overlayRef.current) &&
+        windGlyphRef.current === "arrows" &&
+        !!slice;
       try {
-        ensureWindArrowsLineLayer(map, true);
+        ensureWindArrowsLineLayer(map, showArrows);
         const src = map.getSource("wind-arrows") as GeoJSONSource | undefined;
-        src?.setData(windArrowsGeoJSON(slice, map.getZoom()));
-        if (map.getLayer("wind-arrows-case")) map.moveLayer("wind-arrows-case");
-        if (map.getLayer("wind-arrows")) map.moveLayer("wind-arrows");
+        src?.setData(
+          showArrows && slice
+            ? windArrowsGeoJSON(slice, map.getZoom())
+            : EMPTY_FC,
+        );
       } catch (err) {
         console.error("Wind arrows failed", err);
       }
     };
     apply();
-    map.on("zoomend", apply);
+    map.on("zoom", applyArrows);
+    map.on("zoomend", applyArrows);
     return () => {
-      map.off("zoomend", apply);
+      map.off("zoom", applyArrows);
+      map.off("zoomend", applyArrows);
     };
-  }, [overlay, windSlice, ready]);
+  }, [overlay, windSlice, ready, simulating, windGlyph]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const canvas = windParticleCanvasRef.current;
+    if (!map || !ready || !canvas) return;
+    if (!showsWindGlyphs(overlay) || windGlyph !== "particles") {
+      clearParticleCanvas(canvas);
+      windParticlesRef.current = createParticleField();
+      return;
+    }
+    let raf = 0;
+    let last = performance.now();
+    let moving = false;
+    const onMoveStart = () => {
+      moving = true;
+      clearParticleCanvas(canvas);
+    };
+    const onMoveEnd = () => {
+      moving = false;
+    };
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      const slice = spatialWindSlice(
+        windSliceRef.current,
+        simulatingRef.current,
+      );
+      if (slice && !moving) {
+        stepWindParticles(canvas, map, slice, windParticlesRef.current, dt, {
+          fade: true,
+        });
+      } else if (!slice) {
+        clearParticleCanvas(canvas);
+        windParticlesRef.current = createParticleField();
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    map.on("movestart", onMoveStart);
+    map.on("moveend", onMoveEnd);
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      map.off("movestart", onMoveStart);
+      map.off("moveend", onMoveEnd);
+      clearParticleCanvas(canvas);
+    };
+  }, [overlay, ready, windGlyph]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const src = map.getSource("wind-dir") as GeoJSONSource | undefined;
     if (!src) return;
-    if (!wind || spot.spotId !== selectedLakeId || overlay === "wind") {
+    if (!wind || spot.spotId !== selectedLakeId || showsWindGlyphs(overlay)) {
       src.setData({ type: "FeatureCollection", features: [] });
       return;
     }
@@ -1799,6 +2031,15 @@ export function MapView({
   return (
     <div className="map-wrap">
       <div ref={containerRef} className="map" />
+      <canvas
+        ref={windParticleCanvasRef}
+        className={
+          showsWindGlyphs(overlay) && windGlyph === "particles"
+            ? "wind-particles is-on"
+            : "wind-particles"
+        }
+        aria-hidden="true"
+      />
       <div className="basemap-toggle overlay-toggle" role="group" aria-label="Map overlay">
         <button
           type="button"
@@ -1834,6 +2075,32 @@ export function MapView({
           Wind
         </button>
       </div>
+      {showsWindGlyphs(overlay) ? (
+        <div className="basemap-toggle wind-glyph-toggle" role="group" aria-label="Wind glyphs">
+          <button
+            type="button"
+            className={windGlyph === "arrows" ? "is-on" : ""}
+            aria-pressed={windGlyph === "arrows"}
+            onClick={() => {
+              setWindGlyph("arrows");
+              saveWindGlyph("arrows");
+            }}
+          >
+            Arrows
+          </button>
+          <button
+            type="button"
+            className={windGlyph === "particles" ? "is-on" : ""}
+            aria-pressed={windGlyph === "particles"}
+            onClick={() => {
+              setWindGlyph("particles");
+              saveWindGlyph("particles");
+            }}
+          >
+            Particles
+          </button>
+        </div>
+      ) : null}
       <div className="basemap-toggle" role="group" aria-label="Basemap">
         <button
           type="button"
@@ -1850,6 +2117,14 @@ export function MapView({
           onClick={() => setBasemap("satellite")}
         >
           Satellite
+        </button>
+        <button
+          type="button"
+          className={basemap === "topo" ? "is-on" : ""}
+          aria-pressed={basemap === "topo"}
+          onClick={() => setBasemap("topo")}
+        >
+          Topo
         </button>
       </div>
       <div className="legend">
@@ -1897,8 +2172,10 @@ export function MapView({
                 : windFieldStatus === "error"
                   ? "Wind field unavailable."
                   : simulating
-                    ? "Uniform simulated wind. Color = speed, arrows = direction."
-                    : "~0.5° GEM/HRDPS. Color = speed, arrows = direction."
+                    ? `Uniform simulated wind. Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
+                    : spatialWindSlice(windSlice, false)
+                      ? `~5 km GEM/HRDPS within 20 km of Pigeon Lake. Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
+                      : "No provincial wind field yet."
               : simulating
                 ? "SMB fetch-limited + depth cap. Wind: simulator."
                 : gpxCursor
@@ -1928,7 +2205,6 @@ export function MapView({
           {overlay === "wind" ? (
             <>
               <div className="hover-primary">
-                Wind{" "}
                 {hover.windSpeedMps != null && hover.windDirDeg != null
                   ? formatWind(
                       hover.windSpeedMps,
@@ -1936,7 +2212,7 @@ export function MapView({
                       hover.gustMps,
                       units.wind,
                     )
-                  : "—"}
+                  : "Wind —"}
               </div>
               {hover.onWater && (
                 <>
