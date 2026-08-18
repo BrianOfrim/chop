@@ -3,14 +3,13 @@ import { DEFAULT_WIND_SCALE } from "./colorScales";
 import { windColor, WIND_COLOR_MAX_MPS } from "./windScale";
 import {
   WIND_FIELD_STEP_M,
+  sampleWindField,
   windFieldExtent,
   windFieldSize,
-  windGridLat,
-  windGridLon,
   type WindFieldSlice,
 } from "./windField";
 
-export const WIND_CANVAS_SCALE = 32;
+export const WIND_CANVAS_SCALE = 8;
 
 const ALBERTA_OUTLINE = (albertaMask as GeoJSON.FeatureCollection).features.find(
   (f) => f.properties?.kind === "outline",
@@ -270,25 +269,10 @@ function metersPerPixel(lat: number, zoom: number): number {
 
 const ARROW_SHAFT_PX = 7.5;
 const ARROW_HEAD_PX = 2.75;
-/** Aim for this many screen pixels between neighboring shown sample arrows. */
-const ARROW_TARGET_SPACING_PX = 40;
-
-function nearestPow2(n: number): number {
-  if (n <= 1) return 1;
-  return 2 ** Math.round(Math.log2(n));
-}
-
-/** Power-of-two subsample so on-screen arrow density stays near the target. */
-function arrowStride(
-  zoom: number,
-  lat: number,
-  ncols: number,
-  nrows: number,
-): number {
-  const spacingPx = WIND_FIELD_STEP_M / Math.max(metersPerPixel(lat, zoom), 1e-6);
-  const maxStride = 2 ** Math.floor(Math.log2(Math.max(ncols, nrows, 2) - 1));
-  return Math.min(maxStride, nearestPow2(ARROW_TARGET_SPACING_PX / spacingPx));
-}
+/** Zoomed-in interpolated lattice (lake view). */
+const ARROW_TARGET_SPACING_IN_PX = 40;
+/** Zoomed-out interpolated lattice — tighter so Alberta isn’t sparse. */
+const ARROW_TARGET_SPACING_OUT_PX = 18;
 
 /** Shaft + V head, pointing where the wind is going. */
 function simpleArrowGeometry(
@@ -314,37 +298,150 @@ function simpleArrowGeometry(
   };
 }
 
+function latticeStep(slice: WindFieldSlice, zoom: number, spacingPx: number) {
+  const midLat = (slice.north + slice.south) / 2;
+  const mpx = Math.max(metersPerPixel(midLat, zoom), 1e-6);
+  const dlat = (spacingPx * mpx) / 110_574;
+  const dlon =
+    (spacingPx * mpx) /
+    (111_320 * Math.max(0.2, Math.cos((midLat * Math.PI) / 180)));
+  return { dlat, dlon };
+}
+
+function interpolatedArrowLattice(
+  slice: WindFieldSlice,
+  zoom: number,
+  spacingPx: number,
+): GeoJSON.Feature[] {
+  const features: GeoJSON.Feature[] = [];
+  const { dlat, dlon } = latticeStep(slice, zoom, spacingPx);
+  const south = slice.south + dlat * 0.5;
+  const north = slice.north - dlat * 0.5;
+  const west = slice.west + dlon * 0.5;
+  const east = slice.east - dlon * 0.5;
+  for (let lat = south; lat <= north; lat += dlat) {
+    for (let lon = west; lon <= east; lon += dlon) {
+      if (!pointInAlberta(lon, lat)) continue;
+      const wind = sampleWindField(slice, lon, lat);
+      if (!wind) continue;
+      features.push({
+        type: "Feature",
+        properties: { fromDeg: wind.dirDeg, speed: wind.speedMps },
+        geometry: simpleArrowGeometry(lon, lat, wind.dirDeg, zoom),
+      });
+    }
+  }
+  return features;
+}
+
+function integerStride(spacingPx: number, nativePx: number): number {
+  return Math.max(1, Math.round(spacingPx / Math.max(nativePx, 1e-6)));
+}
+
+function nestedIndices(n: number, stride: number): number[] {
+  const origin = Math.floor((n - 1) / 2);
+  const indices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(i - origin) % stride === 0) indices.push(i);
+  }
+  return indices;
+}
+
+function arrowFeatureAtCell(
+  slice: WindFieldSlice,
+  i: number,
+  j: number,
+  zoom: number,
+): GeoJSON.Feature | null {
+  const lon = slice.west + (i + 0.5) * slice.dlon;
+  const lat = slice.north - (j + 0.5) * slice.dlat;
+  if (!pointInAlberta(lon, lat)) return null;
+  const cell = sampleCell(slice, i, j);
+  const fromDeg = cell?.d;
+  const speed = cell?.s;
+  if (cell && Number.isFinite(fromDeg) && Number.isFinite(speed)) {
+    return {
+      type: "Feature",
+      properties: { fromDeg, speed },
+      geometry: simpleArrowGeometry(lon, lat, fromDeg, zoom),
+    };
+  }
+  const wind = sampleWindField(slice, lon, lat);
+  if (!wind) return null;
+  return {
+    type: "Feature",
+    properties: { fromDeg: wind.dirDeg, speed: wind.speedMps },
+    geometry: simpleArrowGeometry(lon, lat, wind.dirDeg, zoom),
+  };
+}
+
 /**
- * One simple arrow per HRDPS sample (no interpolation). Direction is in the
- * line geometry. Zoomed-out views keep a nested subset (every 2nd, 4th, …).
+ * Regular native-cell grid with a single integer stride on each axis.
+ * Fractional steps (1 then 2 cells) look like missing rows/columns.
+ */
+function snappedNativeLattice(
+  slice: WindFieldSlice,
+  zoom: number,
+  spacingPx: number,
+): GeoJSON.Feature[] {
+  const features: GeoJSON.Feature[] = [];
+  const midLat = (slice.north + slice.south) / 2;
+  const mpx = Math.max(metersPerPixel(midLat, zoom), 1e-6);
+  const nativePxY = (slice.dlat * 110_574) / mpx;
+  const nativePxX =
+    (slice.dlon * 111_320 * Math.max(0.2, Math.cos((midLat * Math.PI) / 180))) /
+    mpx;
+  const cols = nestedIndices(slice.ncols, integerStride(spacingPx, nativePxX));
+  const rows = nestedIndices(slice.nrows, integerStride(spacingPx, nativePxY));
+  for (const j of rows) {
+    for (const i of cols) {
+      const feature = arrowFeatureAtCell(slice, i, j, zoom);
+      if (feature) features.push(feature);
+    }
+  }
+  return features;
+}
+
+function nativeCellArrows(
+  slice: WindFieldSlice,
+  zoom: number,
+): GeoJSON.Feature[] {
+  const features: GeoJSON.Feature[] = [];
+  for (let j = 0; j < slice.nrows; j++) {
+    for (let i = 0; i < slice.ncols; i++) {
+      const cell = sampleCell(slice, i, j);
+      if (!cell) continue;
+      const lon = slice.west + (i + 0.5) * slice.dlon;
+      const lat = slice.north - (j + 0.5) * slice.dlat;
+      if (!pointInAlberta(lon, lat)) continue;
+      features.push({
+        type: "Feature",
+        properties: { fromDeg: cell.d, speed: cell.s },
+        geometry: simpleArrowGeometry(lon, lat, cell.d, zoom),
+      });
+    }
+  }
+  return features;
+}
+
+/**
+ * Regular grid. When native cells are smaller than the zoomed-out target,
+ * use a single integer stride per axis (mixing 1- and 2-cell steps looks gappy).
+ * When they are larger than the lake target, upsample onto a ~40 px lattice.
+ * In between, every native cell gets an arrow.
  */
 export function windArrowsGeoJSON(
   slice: WindFieldSlice,
   zoom: number,
 ): GeoJSON.FeatureCollection {
-  const features: GeoJSON.Feature[] = [];
   const midLat = (slice.north + slice.south) / 2;
-  const stride = arrowStride(zoom, midLat, slice.ncols, slice.nrows);
-  const originI = Math.floor((slice.ncols - 1) / 2);
-  const originJ = Math.floor((slice.nrows - 1) / 2);
-  for (let j = 0; j < slice.nrows; j++) {
-    if (Math.abs(j - originJ) % stride !== 0) continue;
-    for (let i = 0; i < slice.ncols; i++) {
-      if (Math.abs(i - originI) % stride !== 0) continue;
-      const cell = sampleCell(slice, i, j);
-      if (!cell) continue;
-      const lon = windGridLon(i);
-      const lat = windGridLat(j);
-      if (!pointInAlberta(lon, lat)) continue;
-      features.push({
-        type: "Feature",
-        properties: {
-          fromDeg: cell.d,
-          speed: cell.s,
-        },
-        geometry: simpleArrowGeometry(lon, lat, cell.d, zoom),
-      });
-    }
-  }
+  const mpx = Math.max(metersPerPixel(midLat, zoom), 1e-6);
+  const nativePx = WIND_FIELD_STEP_M / mpx;
+  const features =
+    nativePx < ARROW_TARGET_SPACING_OUT_PX
+      ? snappedNativeLattice(slice, zoom, ARROW_TARGET_SPACING_OUT_PX)
+      : nativePx <= ARROW_TARGET_SPACING_IN_PX
+        ? nativeCellArrows(slice, zoom)
+        : interpolatedArrowLattice(slice, zoom, ARROW_TARGET_SPACING_IN_PX);
   return { type: "FeatureCollection", features };
 }
