@@ -21,8 +21,11 @@ import {
   type WindHour,
 } from "./lib/wind";
 import {
+  applyHrdpsFieldToHours,
   fetchAlbertaWindField,
   fetchAlbertaWindFieldRange,
+  HRDPS_HANDOFF_MS,
+  sampleWindField,
   sliceWindField,
   uniformWindSlice,
   type WindField,
@@ -190,11 +193,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!needWindField || !forecast || forecastWindField) return;
+    if (forecastWindField) return;
+    if (forecastWindStatus === "error") return;
     let cancelled = false;
     setForecastWindStatus("loading");
     fetchAlbertaWindField()
       .then((field) => {
+        if (cancelled) return;
         setForecastWindField(field);
         setForecastWindStatus("ready");
       })
@@ -207,7 +212,13 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [needWindField, forecast, forecastWindField]);
+  }, [forecastWindField, forecastWindStatus]);
+
+  useEffect(() => {
+    if (forecastWindStatus !== "error") return;
+    const id = window.setTimeout(() => setForecastWindStatus("idle"), 120_000);
+    return () => window.clearTimeout(id);
+  }, [forecastWindStatus]);
 
   useEffect(() => {
     if (lakes.length === 0) return;
@@ -319,11 +330,32 @@ export default function App() {
     };
   }, [lakeId, lakes]);
 
-  const forecastHours = useMemo(
-    () =>
-      forecast ? sliceForecastHours(forecast.hours, forecastRange) : [],
-    [forecast, forecastRange],
-  );
+  const lakeWindAt = useMemo(() => {
+    if (!spot) return null;
+    const proxy =
+      spot.proxyPoints.find(
+        (p) =>
+          p.role === "background_model_point" ||
+          p.role === "open_water_model_point",
+      ) ?? spot.proxyPoints[0];
+    return {
+      lat: proxy?.latitude ?? spot.identity.latitude,
+      lon: proxy?.longitude ?? spot.identity.longitude,
+    };
+  }, [spot]);
+
+  const forecastHours = useMemo(() => {
+    const sliced = forecast
+      ? sliceForecastHours(forecast.hours, forecastRange)
+      : [];
+    if (!lakeWindAt) return sliced;
+    return applyHrdpsFieldToHours(
+      sliced,
+      forecastWindField,
+      lakeWindAt.lon,
+      lakeWindAt.lat,
+    );
+  }, [forecast, forecastRange, forecastWindField, lakeWindAt]);
 
   const historyHours = useMemo(
     () =>
@@ -549,7 +581,27 @@ export default function App() {
         ? sessionSample.wind
         : mode === "history"
           ? historyWind
-          : forecastWind;
+          : (() => {
+              if (!forecastWind) return null;
+              if (!forecastPoint || !forecastWindField) return forecastWind;
+              const slice = sliceWindField(
+                forecastWindField,
+                forecastWind.time,
+                HRDPS_HANDOFF_MS,
+              );
+              if (!slice) return forecastWind;
+              const s = sampleWindField(
+                slice,
+                forecastPoint.lon,
+                forecastPoint.lat,
+              );
+              if (!s) return forecastWind;
+              return {
+                ...forecastWind,
+                windSpeedMps: s.speedMps,
+                windDirDeg: s.dirDeg,
+              };
+            })();
 
   const neededWindRange = useMemo(() => {
     if (!needWindField) return null;
@@ -611,7 +663,7 @@ export default function App() {
     if (mode === "sim") return uniformWindSlice(wind);
     const nearest = (field: WindField | null) =>
       field && wind.time !== "sim"
-        ? sliceWindField(field, wind.time, Number.POSITIVE_INFINITY)
+        ? sliceWindField(field, wind.time, HRDPS_HANDOFF_MS)
         : null;
     const sliced =
       mode === "history"

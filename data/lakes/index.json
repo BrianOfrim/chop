@@ -125,6 +125,83 @@
       "region": "Alberta, Canada",
       "enabled": true,
       "path": "/lakes/ca-ab-lesser-slave-lake"
+    },
+    {
+      "id": "ca-ab-oldman-reservoir",
+      "name": "Oldman Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-oldman-reservoir"
+    },
+    {
+      "id": "ca-ab-dalemead-lake",
+      "name": "Dalemead Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-dalemead-lake"
+    },
+    {
+      "id": "ca-ab-waterton-lakes",
+      "name": "Waterton Lakes",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-waterton-lakes"
+    },
+    {
+      "id": "ca-ab-newell-lake",
+      "name": "Lake Newell",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-newell-lake"
+    },
+    {
+      "id": "ca-ab-waterton-reservoir",
+      "name": "Waterton Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-waterton-reservoir"
+    },
+    {
+      "id": "ca-ab-stafford-reservoir",
+      "name": "Stafford Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-stafford-reservoir"
+    },
+    {
+      "id": "ca-ab-gleniffer-lake",
+      "name": "Gleniffer Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-gleniffer-lake"
+    },
+    {
+      "id": "ca-ab-eagle-lake",
+      "name": "Eagle Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-eagle-lake"
+    },
+    {
+      "id": "ca-ab-glenmore-reservoir",
+      "name": "Glenmore Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-glenmore-reservoir"
+    },
+    {
+      "id": "ca-ab-travers-reservoir",
+      "name": "Travers Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-travers-reservoir"
+    },
+    {
+      "id": "ca-ab-st-mary-reservoir",
+      "name": "St. Mary Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-st-mary-reservoir"
     }
   ]
 }

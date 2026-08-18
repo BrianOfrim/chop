@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-eagle-lake",
+  "ncols": 62,
+  "nrows": 70,
+  "west": -113.35739056231667,
+  "south": 50.976719707969366,
+  "east": -113.28881871396477,
+  "north": 51.02520872158279,
+  "cellSizeM": 75.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32612",
+  "source": {
+    "shoreline": "OpenStreetMap relation/4785466 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=10.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 4785466
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 1995,
+    "depthMinM": 0.5,
+    "depthMaxM": 9.954669952392578,
+    "depthMeanM": 6.946531772613525,
+    "fetchMaxM": 4875.0
+  },
+  "contourIntervalM": 1.0
+}

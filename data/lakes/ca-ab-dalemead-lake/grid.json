@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-dalemead-lake",
+  "ncols": 39,
+  "nrows": 75,
+  "west": -113.64332728904137,
+  "south": 50.90235183178519,
+  "east": -113.61371544039311,
+  "north": 50.93666291554002,
+  "cellSizeM": 50.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32612",
+  "source": {
+    "shoreline": "OpenStreetMap way/834812145 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=8.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "way",
+    "osmId": 834812145
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 1715,
+    "depthMinM": 0.5,
+    "depthMaxM": 7.786026954650879,
+    "depthMeanM": 5.099149703979492,
+    "fetchMaxM": 3525.0
+  },
+  "contourIntervalM": 1.0
+}

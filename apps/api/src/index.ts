@@ -19,6 +19,13 @@ import {
   summarizeActivity,
   type StravaActivitySummary,
 } from "./track.ts";
+import {
+  getForecastField,
+  getHistoryField,
+  getPointForecast,
+  getPointHistory,
+  isIsoDate,
+} from "./wind.ts";
 
 type ListedActivity = {
   id: number;
@@ -44,6 +51,74 @@ app.use(
 );
 
 app.get("/api/health", (c) => c.json({ ok: true }));
+
+app.get("/api/wind/field", async (c) => {
+  const start = c.req.query("start");
+  const end = c.req.query("end");
+  try {
+    if (start || end) {
+      if (!start || !end || !isIsoDate(start) || !isIsoDate(end)) {
+        return c.json(
+          { error: "start and end must be YYYY-MM-DD" },
+          400,
+        );
+      }
+      if (start > end) {
+        return c.json({ error: "start must be on or before end" }, 400);
+      }
+      const { data, cache } = await getHistoryField(start, end);
+      c.header("X-Wind-Cache", cache);
+      return c.json(data);
+    }
+    const { data, cache } = await getForecastField();
+    c.header("X-Wind-Cache", cache);
+    return c.json(data);
+  } catch (e) {
+    console.error(e);
+    return c.json(
+      { error: e instanceof Error ? e.message : "Wind field unavailable" },
+      502,
+    );
+  }
+});
+
+app.get("/api/wind/point", async (c) => {
+  const lat = Number(c.req.query("lat"));
+  const lon = Number(c.req.query("lon"));
+  const start = c.req.query("start");
+  const end = c.req.query("end");
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return c.json({ error: "lat and lon are required" }, 400);
+  }
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return c.json({ error: "lat/lon out of range" }, 400);
+  }
+  try {
+    if (start || end) {
+      if (!start || !end || !isIsoDate(start) || !isIsoDate(end)) {
+        return c.json(
+          { error: "start and end must be YYYY-MM-DD" },
+          400,
+        );
+      }
+      if (start > end) {
+        return c.json({ error: "start must be on or before end" }, 400);
+      }
+      const { data, cache } = await getPointHistory(lat, lon, start, end);
+      c.header("X-Wind-Cache", cache);
+      return c.json(data);
+    }
+    const { data, cache } = await getPointForecast(lat, lon);
+    c.header("X-Wind-Cache", cache);
+    return c.json(data);
+  } catch (e) {
+    console.error(e);
+    return c.json(
+      { error: e instanceof Error ? e.message : "Wind unavailable" },
+      502,
+    );
+  }
+});
 
 app.get("/api/auth/strava", (c) => {
   if (!stravaConfigured()) {

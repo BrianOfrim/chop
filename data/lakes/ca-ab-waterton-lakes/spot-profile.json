@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-waterton-lakes",
+  "identity": {
+    "name": "Waterton Lakes",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Waterton Park",
+    "latitude": 49.0074,
+    "longitude": -113.90041,
+    "elevationM": 1279,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "foil"
+    ],
+    "waterType": "inland_lake",
+    "summary": "Upper Waterton Lake in Waterton Lakes National Park. Cold, deep, mountain-valley wind. Depth is a shore-distance fill (no AGS DEM)."
+  },
+  "geometry": {
+    "shape": "elongated_narrow",
+    "surroundingTerrain": "mountain_valley",
+    "notes": "Park rules apply. Lake straddles the US border; Canadian townsite is the usual access."
+  },
+  "windRegime": {
+    "primaryType": "gap_valley",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": true,
+    "orographic": "mountain_valley",
+    "primaryDirections": [
+      "S",
+      "N",
+      "SW",
+      "NW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 49.0074,
+      "longitude": -113.90041,
+      "description": "Mid-water"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "waterton-townsite",
+      "name": "Waterton townsite / Emerald Bay",
+      "latitude": 49.046,
+      "longitude": -113.91,
+      "shore": "north",
+      "bestWindDirs": [
+        "S",
+        "SW"
+      ],
+      "notes": "National park; confirm launch rules."
+    }
+  ]
+}

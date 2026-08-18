@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-glenmore-reservoir",
+  "ncols": 71,
+  "nrows": 67,
+  "west": -114.1461379132559,
+  "south": 50.973051512570294,
+  "east": -114.09375896437469,
+  "north": 51.004384695241505,
+  "cellSizeM": 50.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32611",
+  "source": {
+    "shoreline": "OpenStreetMap relation/10609633 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=20.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 10609633
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 1417,
+    "depthMinM": 0.5,
+    "depthMaxM": 16.90711784362793,
+    "depthMeanM": 8.291129112243652,
+    "fetchMaxM": 3000.0
+  },
+  "contourIntervalM": 2.0
+}

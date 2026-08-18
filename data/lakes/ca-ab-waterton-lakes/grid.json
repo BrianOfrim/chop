@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-waterton-lakes",
+  "ncols": 23,
+  "nrows": 114,
+  "west": -113.91908731891908,
+  "south": 48.95579466724826,
+  "east": -113.88172393587064,
+  "north": 49.05900322927015,
+  "cellSizeM": 100.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32612",
+  "source": {
+    "shoreline": "OpenStreetMap relation/1241779 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=80.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 1241779
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 989,
+    "depthMinM": 0.5,
+    "depthMaxM": 50.70659255981445,
+    "depthMeanM": 24.529096603393555,
+    "fetchMaxM": 10850.0
+  },
+  "contourIntervalM": 5.0
+}

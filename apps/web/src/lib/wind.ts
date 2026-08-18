@@ -26,16 +26,15 @@ type GemHourlyResponse = {
     weather_code?: Array<number | null>;
     precipitation?: Array<number | null>;
   };
+  hours?: WindHour[];
+  model?: string;
+  date?: string;
 };
 
-const GEM_HOURLY =
-  "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,precipitation";
-
-/** Open-Meteo historical-forecast host (full HRDPS archive, not the ~2 month live GEM cache). */
-const HISTORICAL_FORECAST_URL =
-  "https://historical-forecast-api.open-meteo.com/v1/forecast";
-
 function parseGemHours(data: GemHourlyResponse): WindHour[] {
+  if (Array.isArray(data.hours) && data.hours.length > 0) {
+    return data.hours;
+  }
   const t: string[] = data.hourly?.time ?? [];
   const spd: Array<number | null> = data.hourly?.wind_speed_10m ?? [];
   const dir: Array<number | null> = data.hourly?.wind_direction_10m ?? [];
@@ -59,45 +58,36 @@ function parseGemHours(data: GemHourlyResponse): WindHour[] {
   return hours;
 }
 
-async function fetchOpenMeteoJson(url: URL): Promise<GemHourlyResponse> {
-  let lastErr: Error | null = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 800 * 2 ** (attempt - 1)));
+async function fetchWindJson(url: string): Promise<GemHourlyResponse> {
+  const res = await globalThis.fetch(url);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) detail = `: ${body.error}`;
+    } catch {
+      // ignore
     }
-    const res = await globalThis.fetch(url);
-    if (res.status === 429 || res.status >= 500) {
-      lastErr = new Error(`Open-Meteo error ${res.status}`);
-      continue;
-    }
-    if (!res.ok) throw new Error(`Open-Meteo error ${res.status}`);
-    return (await res.json()) as GemHourlyResponse;
+    throw new Error(`Wind error ${res.status}${detail}`);
   }
-  throw lastErr ?? new Error("Open-Meteo error");
+  return (await res.json()) as GemHourlyResponse;
 }
 
-/** GEM blend: HRDPS (~2.5 km) for ~48 h, then RDPS / global out to 7 days. */
+/** GEM seamless 7-day timeline; HRDPS field overwrites speed/dir for ~48 h. */
 export async function fetchHrdpsWind(
   lat: number,
   lon: number,
 ): Promise<WindForecast> {
-  const url = new URL("https://api.open-meteo.com/v1/gem");
-  url.searchParams.set("latitude", String(lat));
-  url.searchParams.set("longitude", String(lon));
-  url.searchParams.set("hourly", GEM_HOURLY);
-  url.searchParams.set("wind_speed_unit", "ms");
-  url.searchParams.set("timezone", "auto");
-  url.searchParams.set("forecast_days", "7");
-  url.searchParams.set("past_days", "1");
-  url.searchParams.set("models", "gem_seamless");
-
-  const data = await fetchOpenMeteoJson(url);
-  return { model: "gem_seamless", hours: parseGemHours(data) };
+  const q = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+  const data = await fetchWindJson(`/api/wind/point?${q}`);
+  return {
+    model: data.model ?? "gem_seamless",
+    hours: parseGemHours(data),
+  };
 }
 
 /**
- * Historical HRDPS via Open-Meteo Historical Forecast API for an inclusive
- * calendar range (`YYYY-MM-DD`, interpreted with `timezone=auto`).
+ * Historical HRDPS via the Chop API cache (Open-Meteo Historical Forecast).
  * The live `/v1/gem` endpoint only keeps ~2 months of HRDPS.
  */
 export async function fetchHrdpsWindRange(
@@ -106,25 +96,21 @@ export async function fetchHrdpsWindRange(
   startDate: string,
   endDate: string,
 ): Promise<WindForecast> {
-  const url = new URL(HISTORICAL_FORECAST_URL);
-  url.searchParams.set("latitude", String(lat));
-  url.searchParams.set("longitude", String(lon));
-  url.searchParams.set("hourly", GEM_HOURLY);
-  url.searchParams.set("wind_speed_unit", "ms");
-  url.searchParams.set("timezone", "auto");
-  url.searchParams.set("start_date", startDate);
-  url.searchParams.set("end_date", endDate);
-  url.searchParams.set("models", "gem_hrdps_continental");
-
-  const data = await fetchOpenMeteoJson(url);
+  const q = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    start: startDate,
+    end: endDate,
+  });
+  const data = await fetchWindJson(`/api/wind/point?${q}`);
   const hours = parseGemHours(data);
   if (hours.length === 0) {
     throw new Error(`No HRDPS hours returned for ${startDate}–${endDate}`);
   }
   return {
-    model: "gem_hrdps_continental",
+    model: data.model ?? "gem_hrdps_continental",
     hours,
-    date: startDate === endDate ? startDate : `${startDate}/${endDate}`,
+    date: data.date ?? (startDate === endDate ? startDate : `${startDate}/${endDate}`),
   };
 }
 

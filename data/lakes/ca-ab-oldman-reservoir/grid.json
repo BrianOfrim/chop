@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-oldman-reservoir",
+  "ncols": 195,
+  "nrows": 116,
+  "west": -114.14107406129077,
+  "south": 49.52835823917082,
+  "east": -113.86527301538281,
+  "north": 49.63954904845899,
+  "cellSizeM": 100.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32612",
+  "source": {
+    "shoreline": "OpenStreetMap relation/18042710 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=50.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 18042710
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 2214,
+    "depthMinM": 0.5,
+    "depthMaxM": 42.354007720947266,
+    "depthMeanM": 17.110092163085938,
+    "fetchMaxM": 9350.0
+  },
+  "contourIntervalM": 5.0
+}

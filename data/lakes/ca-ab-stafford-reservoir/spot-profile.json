@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-stafford-reservoir",
+  "identity": {
+    "name": "Stafford Reservoir",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Taber / Lethbridge",
+    "latitude": 49.71235,
+    "longitude": -112.41401,
+    "elevationM": 860,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "foil"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Western Chin Coulee reservoir east of Lethbridge. Open-water kite spot (including ice-edge sessions). OSM maps this basin as part of Chin Lakes; chop keeps it separate from the AGS Chin Lakes DEM. Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "elongated_reservoir",
+    "surroundingTerrain": "prairie_open",
+    "notes": "Irrigation reservoir in Chin Coulee. Confirm access; adjacent to Chin Lakes further east."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "prairie_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW",
+      "S"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 49.71235,
+      "longitude": -112.41401,
+      "description": "Mid-water"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "stafford-west",
+      "name": "West / Chin Coulee",
+      "latitude": 49.7,
+      "longitude": -112.43,
+      "shore": "west",
+      "bestWindDirs": [
+        "W",
+        "SW",
+        "S"
+      ],
+      "notes": "Informal prairie access; confirm landowner and ice/open-water conditions."
+    }
+  ]
+}

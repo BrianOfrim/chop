@@ -21,6 +21,7 @@ export const STRAVA_REDIRECT_URI =
   process.env.STRAVA_REDIRECT_URI ||
   `${WEB_ORIGIN}/api/auth/strava/callback`;
 export const TOKEN_PATH = path.join(apiRoot, ".strava-tokens.json");
+export const WIND_CACHE_DIR = path.join(apiRoot, "data", "wind-cache");
 
 export function stravaConfigured(): boolean {
   return Boolean(STRAVA_CLIENT_ID && STRAVA_CLIENT_SECRET);

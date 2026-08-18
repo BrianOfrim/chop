@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-newell-lake",
+  "identity": {
+    "name": "Lake Newell",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Brooks",
+    "latitude": 50.44029,
+    "longitude": -111.94818,
+    "elevationM": 765,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "foil"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Large irrigation reservoir south of Brooks. Long fetch and strong prairie wind; used for kite, wing, and foil. Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "irregular_basin",
+    "surroundingTerrain": "prairie_open",
+    "notes": "Kinbrook Island Provincial Park on the east shore. Level varies with irrigation demand."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "prairie_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "W",
+      "NW",
+      "SW",
+      "S"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 50.44029,
+      "longitude": -111.94818,
+      "description": "Mid-water"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "kinbrook",
+      "name": "Kinbrook Island / east shore",
+      "latitude": 50.45,
+      "longitude": -111.88,
+      "shore": "east",
+      "bestWindDirs": [
+        "W",
+        "NW",
+        "SW"
+      ],
+      "notes": "Provincial park access; trees on some launches."
+    }
+  ]
+}

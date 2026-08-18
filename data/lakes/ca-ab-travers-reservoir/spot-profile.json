@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-travers-reservoir",
+  "identity": {
+    "name": "Travers Reservoir",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Vulcan / Champion",
+    "latitude": 50.22073,
+    "longitude": -112.84268,
+    "elevationM": 850,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "foil"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Little Bow / Travers irrigation reservoir. Open-water kite sessions including late-season ice-edge days. Posted as Traverse Dam. Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "elongated_reservoir",
+    "surroundingTerrain": "prairie_open",
+    "notes": "Level varies with irrigation. Pair with McGregor / Lake McGregor corridor."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "prairie_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW",
+      "S"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 50.22073,
+      "longitude": -112.84268,
+      "description": "Mid-water"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "travers-dam",
+      "name": "Dam / Little Bow",
+      "latitude": 50.18,
+      "longitude": -112.86,
+      "shore": "south",
+      "bestWindDirs": [
+        "N",
+        "NW",
+        "W"
+      ],
+      "notes": "Posted in the group as Traverse Dam. Confirm access."
+    }
+  ]
+}

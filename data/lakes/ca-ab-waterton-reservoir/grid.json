@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-waterton-reservoir",
+  "ncols": 53,
+  "nrows": 87,
+  "west": -113.71370223627441,
+  "south": 49.27271215900875,
+  "east": -113.65589679631455,
+  "north": 49.33261075969515,
+  "cellSizeM": 75.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32612",
+  "source": {
+    "shoreline": "OpenStreetMap way/4928246 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=30.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "way",
+    "osmId": 4928246
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 1560,
+    "depthMinM": 0.5,
+    "depthMaxM": 26.01841163635254,
+    "depthMeanM": 13.14280891418457,
+    "fetchMaxM": 5362.5
+  },
+  "contourIntervalM": 5.0
+}

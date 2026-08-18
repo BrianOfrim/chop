@@ -1,59 +1,24 @@
 import type { WindHour } from "./wind";
 
-/** Temporary: HRDPS samples within 20 km of Pigeon Lake only (not the whole province). */
-const PIGEON_LAT = 53.03028;
-const PIGEON_LON = -114.06333;
-const WIND_FIELD_RADIUS_M = 20_000;
-/** 8 cells across the 40 km box → 9×9 = 81 points, ~5 km spacing. */
-const WIND_FIELD_CELLS = 8;
-
-const mPerDegLat = 110_574;
-const mPerDegLon =
-  111_320 * Math.cos((PIGEON_LAT * Math.PI) / 180);
-const dlat = WIND_FIELD_RADIUS_M / mPerDegLat;
-const dlon = WIND_FIELD_RADIUS_M / mPerDegLon;
-
-export const WIND_FIELD_WEST = PIGEON_LON - dlon;
-export const WIND_FIELD_EAST = PIGEON_LON + dlon;
-export const WIND_FIELD_SOUTH = PIGEON_LAT - dlat;
-export const WIND_FIELD_NORTH = PIGEON_LAT + dlat;
-export const WIND_FIELD_STEP_LAT = (2 * dlat) / WIND_FIELD_CELLS;
-export const WIND_FIELD_STEP_LON = (2 * dlon) / WIND_FIELD_CELLS;
-/** Nominal sample spacing (m); lon/lat degree steps differ so cells stay ~this. */
-export const WIND_FIELD_STEP_M = (2 * WIND_FIELD_RADIUS_M) / WIND_FIELD_CELLS;
-/** @deprecated equal-degree step; lon/lat steps differ so cells stay ~5 km. */
+/**
+ * Alberta 0.1° HRDPS grid (101×111). Keep in sync with apps/api/src/windGrid.ts.
+ * Outside-Alberta cells stay empty (not filled with nearby wind).
+ */
+export const WIND_FIELD_WEST = -120;
+export const WIND_FIELD_EAST = -110;
+export const WIND_FIELD_SOUTH = 49;
+export const WIND_FIELD_NORTH = 60;
+export const WIND_FIELD_STEP_LAT = 0.1;
+export const WIND_FIELD_STEP_LON = 0.1;
+/** Nominal sample spacing (m) along latitude; lon spacing is smaller in the north. */
+export const WIND_FIELD_STEP_M = WIND_FIELD_STEP_LAT * 110_574;
+/** Alias for the latitude step. */
 export const WIND_FIELD_STEP = WIND_FIELD_STEP_LAT;
 
-const FORECAST_URL = "https://api.open-meteo.com/v1/gem";
-const HISTORICAL_URL =
-  "https://historical-forecast-api.open-meteo.com/v1/forecast";
-/** One 81-point Pigeon box fits in a single POST. */
-const MAX_LOCATIONS = 1000;
-const BATCH_SIZE = 100;
-const BATCH_GAP_MS = 1100;
-
-type GemHourly = {
-  latitude?: number;
-  longitude?: number;
-  hourly?: Record<string, Array<number | string | null> | undefined>;
-};
-
-function hourlySeries(
-  hourly: GemHourly["hourly"],
-  name: string,
-): Array<number | null> {
-  if (!hourly) return [];
-  const direct = hourly[name];
-  if (Array.isArray(direct) && (direct.length === 0 || typeof direct[0] !== "string")) {
-    return direct as Array<number | null>;
-  }
-  const key = Object.keys(hourly).find(
-    (k) => k === name || k.startsWith(`${name}_`),
-  );
-  const series = key ? hourly[key] : undefined;
-  if (!Array.isArray(series)) return [];
-  return series.map((v) => (typeof v === "number" ? v : null));
-}
+const WIND_FIELD_NCOLS =
+  Math.round((WIND_FIELD_EAST - WIND_FIELD_WEST) / WIND_FIELD_STEP_LON) + 1;
+const WIND_FIELD_NROWS =
+  Math.round((WIND_FIELD_NORTH - WIND_FIELD_SOUTH) / WIND_FIELD_STEP_LAT) + 1;
 
 export type WindField = {
   west: number;
@@ -87,7 +52,7 @@ export type WindFieldSlice = {
 };
 
 export function windFieldSize(): { ncols: number; nrows: number } {
-  return { ncols: WIND_FIELD_CELLS + 1, nrows: WIND_FIELD_CELLS + 1 };
+  return { ncols: WIND_FIELD_NCOLS, nrows: WIND_FIELD_NROWS };
 }
 
 export function windFieldExtent(): {
@@ -112,173 +77,58 @@ export function windGridLat(j: number): number {
   return WIND_FIELD_NORTH - j * WIND_FIELD_STEP_LAT;
 }
 
-function points(): Array<{ i: number; j: number; lat: number; lon: number }> {
-  const { ncols, nrows } = windFieldSize();
-  const out = [];
-  for (let j = 0; j < nrows; j++) {
-    for (let i = 0; i < ncols; i++) {
-      out.push({ i, j, lat: windGridLat(j), lon: windGridLon(i) });
-    }
+type WindFieldJson = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  dlon: number;
+  dlat: number;
+  ncols: number;
+  nrows: number;
+  times: string[];
+  speed: Array<number | null>;
+  dir: Array<number | null>;
+};
+
+function unpack(arr: Array<number | null> | undefined): Float32Array {
+  const out = new Float32Array(arr?.length ?? 0);
+  if (!arr) return out;
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i];
+    out[i] = v == null ? Number.NaN : v;
   }
   return out;
 }
 
-function alignBatch(
-  chunk: Array<{ lat: number; lon: number }>,
-  batch: GemHourly[],
-): GemHourly[] {
-  const unused = batch.map((_, i) => i);
-  const aligned: GemHourly[] = new Array(chunk.length);
-  for (let k = 0; k < chunk.length; k++) {
-    const p = chunk[k]!;
-    let bestU = 0;
-    let bestD = Infinity;
-    for (let u = 0; u < unused.length; u++) {
-      const row = batch[unused[u]!]!;
-      if (row.latitude == null || row.longitude == null) continue;
-      const dlat = row.latitude - p.lat;
-      const dlon = row.longitude - p.lon;
-      const d = dlat * dlat + dlon * dlon;
-      if (d < bestD) {
-        bestD = d;
-        bestU = u;
-      }
+async function loadWindField(url: string): Promise<WindField> {
+  const res = await globalThis.fetch(url);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) detail = `: ${body.error}`;
+    } catch {
+      // ignore
     }
-    const idx = unused.splice(bestU, 1)[0]!;
-    aligned[k] = batch[idx]!;
+    throw new Error(`Wind field error ${res.status}${detail}`);
   }
-  return aligned;
-}
-
-function fieldRequestBody(
-  kind: "forecast" | "history",
-  pts: Array<{ lat: number; lon: number }>,
-  startDate?: string,
-  endDate?: string,
-): Record<string, unknown> {
-  const n = pts.length;
-  const model =
-    kind === "history" ? "gem_hrdps_continental" : "gem_seamless";
-  const body: Record<string, unknown> = {
-    latitude: pts.map((p) => Number(p.lat.toFixed(3))),
-    longitude: pts.map((p) => Number(p.lon.toFixed(3))),
-    hourly: ["wind_speed_10m", "wind_direction_10m"],
-    wind_speed_unit: "ms",
-    timezone: Array.from({ length: n }, () => "America/Edmonton"),
-    models: Array.from({ length: n }, () => model),
-  };
-  if (kind === "history" && startDate && endDate) {
-    body.start_date = startDate;
-    body.end_date = endDate;
-  } else {
-    body.forecast_days = 7;
-    body.past_days = 1;
+  const data = (await res.json()) as WindFieldJson;
+  if (!Array.isArray(data.times) || data.times.length === 0) {
+    throw new Error("Wind field returned no hours");
   }
-  return body;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function fetchLocationBatch(
-  kind: "forecast" | "history",
-  pts: Array<{ lat: number; lon: number }>,
-  startDate?: string,
-  endDate?: string,
-): Promise<GemHourly[]> {
-  const url = kind === "history" ? HISTORICAL_URL : FORECAST_URL;
-  const body = JSON.stringify(fieldRequestBody(kind, pts, startDate, endDate));
-  let lastErr: Error | null = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    if (attempt > 0) {
-      await delay(1500 * 2 ** (attempt - 1));
-    }
-    const res = await globalThis.fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-    });
-    if (res.status === 429 || res.status >= 500) {
-      lastErr = new Error(`Open-Meteo wind field error ${res.status}`);
-      continue;
-    }
-    if (!res.ok) throw new Error(`Open-Meteo wind field error ${res.status}`);
-    const data = (await res.json()) as GemHourly | GemHourly[];
-    const rows = Array.isArray(data) ? data : [data];
-    if (rows.length !== pts.length) {
-      throw new Error(`Wind field size ${rows.length} != ${pts.length}`);
-    }
-    return alignBatch(pts, rows);
-  }
-  throw lastErr ?? new Error("Open-Meteo wind field error");
-}
-
-async function fetchLocations(
-  kind: "forecast" | "history",
-  pts: Array<{ lat: number; lon: number }>,
-  startDate?: string,
-  endDate?: string,
-): Promise<GemHourly[]> {
-  if (pts.length === 0) return [];
-  if (pts.length > MAX_LOCATIONS) {
-    throw new Error(`Wind field has ${pts.length} points; max is ${MAX_LOCATIONS}`);
-  }
-  const out: GemHourly[] = [];
-  for (let i = 0; i < pts.length; i += BATCH_SIZE) {
-    if (i > 0) await delay(BATCH_GAP_MS);
-    const chunk = pts.slice(i, i + BATCH_SIZE);
-    out.push(...(await fetchLocationBatch(kind, chunk, startDate, endDate)));
-  }
-  return out;
-}
-
-async function fetchAlbertaWindFieldWith(
-  kind: "forecast" | "history",
-  startDate?: string,
-  endDate?: string,
-): Promise<WindField> {
-  const pts = points();
-  const { ncols, nrows } = windFieldSize();
-  const ncells = ncols * nrows;
-  const rows = await fetchLocations(kind, pts, startDate, endDate);
-
-  const times = (rows[0]?.hourly?.time ?? []).filter(
-    (t): t is string => typeof t === "string",
-  );
-  if (times.length === 0) throw new Error("Wind field returned no hours");
-  const speed = new Float32Array(times.length * ncells);
-  const dir = new Float32Array(times.length * ncells);
-  speed.fill(Number.NaN);
-  dir.fill(Number.NaN);
-
-  for (let p = 0; p < pts.length; p++) {
-    const cell = pts[p]!;
-    const hourly = rows[p]?.hourly;
-    const spd = hourlySeries(hourly, "wind_speed_10m");
-    const deg = hourlySeries(hourly, "wind_direction_10m");
-    const idx0 = cell.j * ncols + cell.i;
-    for (let t = 0; t < times.length; t++) {
-      const s = spd[t];
-      const d = deg[t];
-      const idx = t * ncells + idx0;
-      if (s != null && d != null) {
-        speed[idx] = s;
-        dir[idx] = d;
-      }
-    }
-  }
-
-  const extent = windFieldExtent();
   return {
-    ...extent,
-    dlon: WIND_FIELD_STEP_LON,
-    dlat: WIND_FIELD_STEP_LAT,
-    ncols,
-    nrows,
-    times,
-    speed,
-    dir,
+    west: data.west,
+    south: data.south,
+    east: data.east,
+    north: data.north,
+    dlon: data.dlon,
+    dlat: data.dlat,
+    ncols: data.ncols,
+    nrows: data.nrows,
+    times: data.times,
+    speed: unpack(data.speed),
+    dir: unpack(data.dir),
   };
 }
 
@@ -286,12 +136,10 @@ let forecastFieldPromise: Promise<WindField> | null = null;
 
 export function fetchAlbertaWindField(): Promise<WindField> {
   if (!forecastFieldPromise) {
-    forecastFieldPromise = fetchAlbertaWindFieldWith("forecast").catch(
-      (err) => {
-        forecastFieldPromise = null;
-        throw err;
-      },
-    );
+    forecastFieldPromise = loadWindField("/api/wind/field").catch((err) => {
+      forecastFieldPromise = null;
+      throw err;
+    });
   }
   return forecastFieldPromise;
 }
@@ -300,7 +148,8 @@ export function fetchAlbertaWindFieldRange(
   startDate: string,
   endDate: string,
 ): Promise<WindField> {
-  return fetchAlbertaWindFieldWith("history", startDate, endDate);
+  const q = new URLSearchParams({ start: startDate, end: endDate });
+  return loadWindField(`/api/wind/field?${q}`);
 }
 
 function nearestTimeIndex(times: string[], timeIso: string): number {
@@ -322,6 +171,9 @@ function nearestTimeIndex(times: string[], timeIso: string): number {
   }
   return best;
 }
+
+/** Match overlay to lake wind: HRDPS hours only; later GEM seamless stays as-is. */
+export const HRDPS_HANDOFF_MS = 2 * 60 * 60 * 1000;
 
 export function sliceWindField(
   field: WindField,
@@ -486,4 +338,26 @@ export function sampleWindField(
   const jc = Math.min(nrows - 1, Math.max(0, Math.round(fy)));
   const nearest = nearestFiniteCell(slice, ic, jc);
   return nearest ? { speedMps: nearest.s, dirDeg: nearest.d } : null;
+}
+
+/** Replace speed/dir with HRDPS field samples when the hour is inside the HRDPS window. */
+export function applyHrdpsFieldToHours(
+  hours: WindHour[],
+  field: WindField | null,
+  lon: number,
+  lat: number,
+  maxDeltaMs: number = HRDPS_HANDOFF_MS,
+): WindHour[] {
+  if (!field || hours.length === 0) return hours;
+  return hours.map((h) => {
+    const slice = sliceWindField(field, h.time, maxDeltaMs);
+    if (!slice) return h;
+    const s = sampleWindField(slice, lon, lat);
+    if (!s) return h;
+    return {
+      ...h,
+      windSpeedMps: s.speedMps,
+      windDirDeg: s.dirDeg,
+    };
+  });
 }

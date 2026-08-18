@@ -20,7 +20,8 @@ const TRAIL_LEN = 72;
 /** Screen pixels per second at 1 m/s local wind. */
 const PX_PER_SEC_PER_MPS = 5.6;
 const VIEW_PAD_PX = 48;
-const SPAWN_TRIES = 24;
+const SPAWN_TRIES = 48;
+const OCCUPANCY_CELL_PX = 26;
 const HEAD_R = 1.15;
 export const WIND_STREAK_RGB = "168,172,176";
 export const WIND_STREAK_COLOR = `rgb(${WIND_STREAK_RGB})`;
@@ -69,6 +70,30 @@ export function clearParticleCanvas(canvas: HTMLCanvasElement | null): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
+function makeParticle(lon: number, lat: number): Particle {
+  return {
+    lon,
+    lat,
+    age: Math.random() * 1.2,
+    maxAge: 4.2 + Math.random() * 5.5,
+    trail: [{ lon, lat }],
+    fade: 1,
+    dying: false,
+  };
+}
+
+function trySpawnAt(
+  map: MapLibreMap,
+  slice: WindFieldSlice,
+  x: number,
+  y: number,
+): Particle | null {
+  const ll = map.unproject([x, y]);
+  if (!pointInAlberta(ll.lng, ll.lat)) return null;
+  if (!sampleWindField(slice, ll.lng, ll.lat)) return null;
+  return makeParticle(ll.lng, ll.lat);
+}
+
 function spawn(
   map: MapLibreMap,
   slice: WindFieldSlice,
@@ -76,20 +101,13 @@ function spawn(
   height: number,
 ): Particle | null {
   for (let n = 0; n < SPAWN_TRIES; n++) {
-    const x = Math.random() * width;
-    const y = Math.random() * height;
-    const ll = map.unproject([x, y]);
-    if (!pointInAlberta(ll.lng, ll.lat)) continue;
-    if (!sampleWindField(slice, ll.lng, ll.lat)) continue;
-    return {
-      lon: ll.lng,
-      lat: ll.lat,
-      age: 0,
-      maxAge: 4.2 + Math.random() * 5.5,
-      trail: [{ lon: ll.lng, lat: ll.lat }],
-      fade: 1,
-      dying: false,
-    };
+    const next = trySpawnAt(
+      map,
+      slice,
+      Math.random() * width,
+      Math.random() * height,
+    );
+    if (next) return next;
   }
   return null;
 }
@@ -166,6 +184,119 @@ function drawHead(
   ctx.fill();
 }
 
+function occupancySize(width: number, height: number): {
+  cols: number;
+  rows: number;
+} {
+  return {
+    cols: Math.max(1, Math.ceil(width / OCCUPANCY_CELL_PX)),
+    rows: Math.max(1, Math.ceil(height / OCCUPANCY_CELL_PX)),
+  };
+}
+
+function occupancyIndex(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  cols: number,
+  rows: number,
+): number {
+  const col = Math.min(cols - 1, Math.max(0, Math.floor((x / width) * cols)));
+  const row = Math.min(rows - 1, Math.max(0, Math.floor((y / height) * rows)));
+  return row * cols + col;
+}
+
+/** Drop off-screen particles immediately. After a zoom jump, keep at most one per cell. */
+function settleView(
+  map: MapLibreMap,
+  particles: Particle[],
+  width: number,
+  height: number,
+  zoomJumped: boolean,
+): void {
+  const { cols, rows } = occupancySize(width, height);
+  const seen = zoomJumped ? new Uint8Array(cols * rows) : null;
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i]!;
+    const screen = map.project([p.lon, p.lat]);
+    if (!inView(screen.x, screen.y, width, height)) {
+      particles.splice(i, 1);
+      i -= 1;
+      continue;
+    }
+    if (!seen) continue;
+    const idx = occupancyIndex(screen.x, screen.y, width, height, cols, rows);
+    if (seen[idx]) {
+      particles.splice(i, 1);
+      i -= 1;
+      continue;
+    }
+    seen[idx] = 1;
+    p.dying = false;
+    p.fade = 1;
+  }
+}
+
+function fillEmptyCells(
+  map: MapLibreMap,
+  slice: WindFieldSlice,
+  particles: Particle[],
+  width: number,
+  height: number,
+  want: number,
+): void {
+  let living = 0;
+  for (const p of particles) {
+    if (!p.dying) living += 1;
+  }
+  if (living >= want) return;
+
+  const { cols, rows } = occupancySize(width, height);
+  const filled = new Uint8Array(cols * rows);
+  for (const p of particles) {
+    if (p.dying) continue;
+    const screen = map.project([p.lon, p.lat]);
+    if (!inView(screen.x, screen.y, width, height)) continue;
+    filled[occupancyIndex(screen.x, screen.y, width, height, cols, rows)] = 1;
+  }
+
+  const empty: number[] = [];
+  for (let i = 0; i < filled.length; i++) {
+    if (!filled[i]) empty.push(i);
+  }
+  for (let i = empty.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = empty[i]!;
+    empty[i] = empty[j]!;
+    empty[j] = tmp;
+  }
+
+  for (const idx of empty) {
+    if (living >= want) return;
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
+    const x = ((col + 0.2 + Math.random() * 0.6) / cols) * width;
+    const y = ((row + 0.2 + Math.random() * 0.6) / rows) * height;
+    const next = trySpawnAt(map, slice, x, y);
+    if (!next) continue;
+    particles.push(next);
+    living += 1;
+  }
+
+  let misses = 0;
+  while (living < want && misses < 8) {
+    const next = spawn(map, slice, width, height);
+    if (!next) {
+      misses += 1;
+      continue;
+    }
+    particles.push(next);
+    living += 1;
+    misses = 0;
+  }
+}
+
 /**
  * Advect particles along the wind field and paint comet tails.
  * Returns false if the canvas could not be sized (caller should skip the frame).
@@ -176,13 +307,18 @@ export function stepWindParticles(
   slice: WindFieldSlice,
   particles: Particle[],
   dt: number,
-  _opts: { fade: boolean },
+  opts: { fade: boolean; viewChanged?: boolean; zoomJumped?: boolean },
 ): boolean {
   const synced = syncParticleCanvas(canvas, map);
   if (!synced) return false;
   const { ctx, width, height } = synced;
   const step = Math.min(0.05, Math.max(0, dt));
   const want = particleCountForView(width, height);
+
+  if (opts.viewChanged) {
+    settleView(map, particles, width, height, Boolean(opts.zoomJumped));
+  }
+  fillEmptyCells(map, slice, particles, width, height, want);
 
   ctx.clearRect(0, 0, width, height);
   ctx.globalCompositeOperation = "source-over";
@@ -231,11 +367,5 @@ export function stepWindParticles(
     drawComet(ctx, map, p.trail, Math.max(0, p.fade));
   }
 
-  while (living < want) {
-    const next = spawn(map, slice, width, height);
-    if (!next) break;
-    particles.push(next);
-    living += 1;
-  }
   return true;
 }

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-oldman-reservoir",
+  "identity": {
+    "name": "Oldman Reservoir",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Pincher Creek / Fort Macleod",
+    "latitude": 49.58395,
+    "longitude": -114.00317,
+    "elevationM": 1115,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "foil"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Oldman River reservoir (OMD / Windy Point). Major southern Alberta kite and wing spot; canyon terrain and gusty mountain-wave flow. Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "elongated_reservoir",
+    "surroundingTerrain": "foothills",
+    "notes": "Level varies with irrigation and hydro operations. Windy Point is the usual launch."
+  },
+  "windRegime": {
+    "primaryType": "chinook_foehn",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": true,
+    "orographic": "foothills_gap",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW",
+      "S"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 49.58395,
+      "longitude": -114.00317,
+      "description": "Mid-water"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "windy-point",
+      "name": "Windy Point",
+      "latitude": 49.562,
+      "longitude": -113.86,
+      "shore": "northeast",
+      "bestWindDirs": [
+        "W",
+        "SW",
+        "NW"
+      ],
+      "notes": "Usual kite launch; confirm gate and water level."
+    }
+  ]
+}

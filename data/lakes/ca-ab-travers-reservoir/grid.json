@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-travers-reservoir",
+  "ncols": 243,
+  "nrows": 144,
+  "west": -112.97221958066255,
+  "south": 50.170163400627764,
+  "east": -112.71313813877296,
+  "north": 50.2712951954463,
+  "cellSizeM": 75.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32612",
+  "source": {
+    "shoreline": "OpenStreetMap way/18263453 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=25.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "way",
+    "osmId": 18263453
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 4033,
+    "depthMinM": 0.5,
+    "depthMaxM": 21.41067886352539,
+    "depthMeanM": 10.63711929321289,
+    "fetchMaxM": 9187.5
+  },
+  "contourIntervalM": 2.0
+}

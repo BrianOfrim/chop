@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-gleniffer-lake",
+  "identity": {
+    "name": "Gleniffer Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Innisfail / Red Deer",
+    "latitude": 52.0258,
+    "longitude": -114.27704,
+    "elevationM": 945,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "foil"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Dickson Dam reservoir (Gleniffer Lake) west of Innisfail. Open fetch with little shoreline obstruction. Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "irregular_basin",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Posted in the kite group as Glenifer. Level controlled by Dickson Dam."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "prairie_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "W",
+      "NW",
+      "SW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 52.0258,
+      "longitude": -114.27704,
+      "description": "Mid-water"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "gleniffer-dam",
+      "name": "Dickson Dam / south shore",
+      "latitude": 52.05,
+      "longitude": -114.22,
+      "shore": "southeast",
+      "bestWindDirs": [
+        "W",
+        "NW"
+      ],
+      "notes": "Public recreation areas around the dam; confirm windward launch."
+    }
+  ]
+}

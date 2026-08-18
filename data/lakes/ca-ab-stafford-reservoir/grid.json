@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-stafford-reservoir",
+  "ncols": 118,
+  "nrows": 94,
+  "west": -112.47628991147342,
+  "south": 49.679907117254714,
+  "east": -112.35172976963675,
+  "north": 49.744797326968666,
+  "cellSizeM": 75.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32612",
+  "source": {
+    "shoreline": "OpenStreetMap relation/9000001 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=20.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 9000001
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 905,
+    "depthMinM": 0.5,
+    "depthMaxM": 13.31081771850586,
+    "depthMeanM": 5.892538070678711,
+    "fetchMaxM": 5062.5
+  },
+  "contourIntervalM": 2.0
+}

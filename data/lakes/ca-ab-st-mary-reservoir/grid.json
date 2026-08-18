@@ -1,0 +1,54 @@
+{
+  "spotId": "ca-ab-st-mary-reservoir",
+  "ncols": 133,
+  "nrows": 134,
+  "west": -113.29230249156451,
+  "south": 49.24877605854675,
+  "east": -113.10409771247538,
+  "north": 49.37270115236304,
+  "cellSizeM": 100.0,
+  "nodata": -1.0,
+  "nDirs": 16,
+  "directionsDeg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+  ],
+  "crs": "EPSG:4326",
+  "projectedCrs": "EPSG:32612",
+  "source": {
+    "shoreline": "OpenStreetMap relation/11207380 (ODbL)",
+    "bathymetry": "synthetic distance-from-shore (max=35.0m)",
+    "licence": "ODbL for OSM shoreline; synthetic bathymetry for chop",
+    "osmType": "relation",
+    "osmId": 11207380
+  },
+  "files": {
+    "depth": "depth.bin",
+    "fetch": "fetch_16dir.bin",
+    "shoreline": "shoreline.geojson",
+    "spot": "spot-profile.json",
+    "contours": "depth-contours.geojson"
+  },
+  "stats": {
+    "waterCells": 3082,
+    "depthMinM": 0.5,
+    "depthMaxM": 34.44865417480469,
+    "depthMeanM": 16.869369506835938,
+    "fetchMaxM": 7950.0
+  },
+  "contourIntervalM": 5.0
+}

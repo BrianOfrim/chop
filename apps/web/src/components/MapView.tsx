@@ -1818,10 +1818,8 @@ export function MapView({
       }
     };
     apply();
-    map.on("zoom", applyArrows);
     map.on("zoomend", applyArrows);
     return () => {
-      map.off("zoom", applyArrows);
       map.off("zoomend", applyArrows);
     };
   }, [overlay, windSlice, ready, simulating, windGlyph]);
@@ -1838,12 +1836,19 @@ export function MapView({
     let raf = 0;
     let last = performance.now();
     let moving = false;
+    let viewChanged = true;
+    let zoomJumped = true;
+    let lastZoom = map.getZoom();
     const onMoveStart = () => {
       moving = true;
       clearParticleCanvas(canvas);
     };
     const onMoveEnd = () => {
       moving = false;
+      const z = map.getZoom();
+      zoomJumped = Math.abs(z - lastZoom) > 0.2;
+      lastZoom = z;
+      viewChanged = true;
     };
     const tick = (now: number) => {
       const dt = (now - last) / 1000;
@@ -1855,10 +1860,16 @@ export function MapView({
       if (slice && !moving) {
         stepWindParticles(canvas, map, slice, windParticlesRef.current, dt, {
           fade: true,
+          viewChanged,
+          zoomJumped,
         });
+        viewChanged = false;
+        zoomJumped = false;
       } else if (!slice) {
         clearParticleCanvas(canvas);
         windParticlesRef.current = createParticleField();
+        viewChanged = true;
+        zoomJumped = true;
       }
       raf = requestAnimationFrame(tick);
     };
@@ -2168,21 +2179,21 @@ export function MapView({
             ? `Shallow (light) to deep (dark). ${depthIntervalM} m contours.`
             : overlay === "wind"
               ? windFieldStatus === "loading"
-                ? "Loading HRDPS wind field…"
+                ? "Loading GEM wind field…"
                 : windFieldStatus === "error"
                   ? "Wind field unavailable."
                   : simulating
                     ? `Uniform simulated wind. Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
                     : spatialWindSlice(windSlice, false)
-                      ? `~5 km GEM/HRDPS within 20 km of Pigeon Lake. Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
-                      : "No provincial wind field yet."
+                      ? `GEM 10 m over Alberta (HRDPS, then RDPS / GDPS). Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
+                      : "No provincial wind field this hour."
               : simulating
                 ? "SMB fetch-limited + depth cap. Wind: simulator."
                 : gpxCursor
                   ? "SMB fetch-limited + depth cap. Wind: HRDPS (session)."
                   : historic
                     ? "SMB fetch-limited + depth cap. Wind: HRDPS (history)."
-                    : "SMB fetch-limited + depth cap. Wind: HRDPS."}
+                    : "SMB fetch-limited + depth cap. Wind: HRDPS ~48 h, then RDPS / GDPS."}
         </p>
         {overlay === "wind" ? (
           <p className="legend-note">Click a lake to select it.</p>
