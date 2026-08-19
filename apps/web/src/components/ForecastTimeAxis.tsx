@@ -23,10 +23,22 @@ export function ForecastTimeAxis({ times, hourIndex, onSelectHour }: Props) {
     const { slot, barW, xBar, indexFromClientX } = buildTimeAxis(times.length);
     const hourLabels = buildHourLabels(times, (i) => xBar(i) + barW / 2);
     const daySegs = buildDaySegs(times);
-    const dayLabels = daySegs.map((seg) => ({
-      text: seg.text,
-      x: (xBar(seg.start) + xBar(seg.end) + barW) / 2,
-    }));
+    const dayLabels = daySegs.map((seg, idx) => {
+      const x0 = xBar(seg.start);
+      const x1 = xBar(seg.end) + barW;
+      const w = x1 - x0;
+      if (w < 80 && idx === 0) {
+        return { text: seg.text, x: Math.max(PAD.left, x0), anchor: "start" as const };
+      }
+      if (w < 80 && idx === daySegs.length - 1) {
+        return {
+          text: seg.text,
+          x: Math.min(W - PAD.right, x1),
+          anchor: "end" as const,
+        };
+      }
+      return { text: seg.text, x: (x0 + x1) / 2, anchor: "middle" as const };
+    });
     const dayDividers = daySegs.slice(1).map((seg) => PAD.left + seg.start * slot);
     const selectedX = xBar(hourIndex);
     return { barW, xBar, hourLabels, dayLabels, dayDividers, selectedX, indexFromClientX };
@@ -73,7 +85,7 @@ export function ForecastTimeAxis({ times, hourIndex, onSelectHour }: Props) {
           x={d.x}
           y={12}
           className="wind-chart-day-top"
-          textAnchor="middle"
+          textAnchor={d.anchor}
         >
           {d.text}
         </text>

@@ -314,9 +314,22 @@ export function sampleWindField(
   slice: WindFieldSlice,
   lon: number,
   lat: number,
+  mode: "blend" | "edges" = "blend",
 ): { speedMps: number; dirDeg: number } | null {
   const { ncols, nrows, west, south, east, north } = slice;
   if (!inWindFieldExtent(slice, lon, lat)) return null;
+  if (mode === "edges") {
+    const i = Math.min(
+      ncols - 1,
+      Math.max(0, Math.floor(((lon - west) / (east - west)) * ncols)),
+    );
+    const j = Math.min(
+      nrows - 1,
+      Math.max(0, Math.floor(((north - lat) / (north - south)) * nrows)),
+    );
+    const cell = finiteCell(slice, i, j);
+    return cell ? { speedMps: cell.s, dirDeg: cell.d } : null;
+  }
   const fx = ((lon - west) / (east - west)) * ncols - 0.5;
   const fy = ((north - lat) / (north - south)) * nrows - 0.5;
   const i0 = Math.floor(fx);

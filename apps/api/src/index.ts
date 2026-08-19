@@ -21,6 +21,7 @@ import {
 } from "./track.ts";
 import {
   getForecastField,
+  getForecastTempField,
   getHistoryField,
   getPointForecast,
   getPointHistory,
@@ -77,6 +78,20 @@ app.get("/api/wind/field", async (c) => {
     console.error(e);
     return c.json(
       { error: e instanceof Error ? e.message : "Wind field unavailable" },
+      502,
+    );
+  }
+});
+
+app.get("/api/temp/field", async (c) => {
+  try {
+    const { data, cache } = await getForecastTempField();
+    c.header("X-Wind-Cache", cache);
+    return c.json(data);
+  } catch (e) {
+    console.error(e);
+    return c.json(
+      { error: e instanceof Error ? e.message : "Temp field unavailable" },
       502,
     );
   }

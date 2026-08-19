@@ -73,6 +73,7 @@ export function paintHsClipped(
   ctx: CanvasRenderingContext2D,
   hsImage: ImageData,
   mask: HTMLCanvasElement,
+  smooth = true,
 ): void {
   const { width, height } = mask;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -82,7 +83,7 @@ export function paintHsClipped(
   tmp.width = hsImage.width;
   tmp.height = hsImage.height;
   tmp.getContext("2d")!.putImageData(hsImage, 0, 0);
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = smooth;
   ctx.drawImage(tmp, 0, 0, width, height);
   ctx.globalCompositeOperation = "destination-in";
   ctx.drawImage(mask, 0, 0);

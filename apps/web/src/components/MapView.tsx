@@ -36,8 +36,10 @@ import {
   sampleWindField,
   type WindFieldSlice,
 } from "../lib/windField";
+import { drawLakeOutlines, polygonRings } from "../lib/lakeOutlines";
 import {
   buildAlbertaWindMask,
+  paintTempField,
   paintWindField,
   windArrowsGeoJSON,
   windCanvasCoordinates,
@@ -51,23 +53,112 @@ import {
   WIND_STREAK_COLOR,
 } from "../lib/windParticles";
 import {
+  celsiusToTemp,
   formatDepth,
+  formatTemp,
   formatWaveHeight,
   formatWindSpeed,
+  metersToWave,
+  mpsToWind,
+  tempUnitLabel,
+  waveUnitLabel,
+  windUnitLabel,
   type UnitPrefs,
 } from "../lib/units";
-import { DEFAULT_DEPTH_SCALE, DEFAULT_WAVE_SCALE, DEFAULT_WIND_SCALE, scaleGradientCss } from "../lib/colorScales";
+import { DEFAULT_DEPTH_SCALE, DEFAULT_TEMP_SCALE, DEFAULT_WAVE_SCALE, DEFAULT_WIND_SCALE, sampleRgb, scaleGradientCss, type ColorScaleId } from "../lib/colorScales";
 import type { GpxTrack } from "../lib/gpx";
+import {
+  sampleTempField,
+  type TempFieldSlice,
+} from "../lib/tempField";
+import { TEMP_COLOR_MAX_C, TEMP_COLOR_MIN_C } from "../lib/tempScale";
 
-type OverlayId = "waves" | "depth" | "wind";
+export type OverlayId = "waves" | "depth" | "wind" | "temp";
 type WindGlyphId = "arrows" | "particles";
+type HeatmapStyle = "blend" | "edges";
 
 function showsWindHeatmap(overlay: OverlayId): boolean {
   return overlay === "wind";
 }
 
+function showsTempHeatmap(overlay: OverlayId): boolean {
+  return overlay === "temp";
+}
+
+function showsFieldHeatmap(overlay: OverlayId): boolean {
+  return showsWindHeatmap(overlay) || showsTempHeatmap(overlay);
+}
+
 function showsWindGlyphs(overlay: OverlayId): boolean {
   return overlay === "waves" || overlay === "wind";
+}
+
+const LEGEND_TICK_COUNT = 5;
+
+function legendStops(min: number, max: number, count = LEGEND_TICK_COUNT): number[] {
+  if (count < 2) return [min, max];
+  return Array.from(
+    { length: count },
+    (_, i) => min + ((max - min) * i) / (count - 1),
+  );
+}
+
+function formatLegendTick(
+  overlay: OverlayId,
+  value: number,
+  units: UnitPrefs,
+): string {
+  if (overlay === "depth") {
+    const v = units.wave === "ft" ? value * 3.28084 : value;
+    return v.toFixed(v >= 10 ? 0 : 1);
+  }
+  if (overlay === "wind") {
+    const v = mpsToWind(value, units.wind);
+    return v.toFixed(units.wind === "mps" ? 1 : 0);
+  }
+  if (overlay === "temp") {
+    return celsiusToTemp(value, units.temp).toFixed(0);
+  }
+  const v = metersToWave(value, units.wave);
+  if (units.wave === "m") return v.toFixed(2);
+  if (units.wave === "ft") return v.toFixed(1);
+  return v.toFixed(0);
+}
+
+function legendUnit(overlay: OverlayId, units: UnitPrefs): string {
+  if (overlay === "wind") return windUnitLabel(units.wind);
+  if (overlay === "temp") return tempUnitLabel(units.temp);
+  if (overlay === "depth") return units.wave === "ft" ? "ft" : "m";
+  return waveUnitLabel(units.wave);
+}
+
+function legendScale(overlay: OverlayId): ColorScaleId {
+  if (overlay === "depth") return DEFAULT_DEPTH_SCALE;
+  if (overlay === "wind") return DEFAULT_WIND_SCALE;
+  if (overlay === "temp") return DEFAULT_TEMP_SCALE;
+  return DEFAULT_WAVE_SCALE;
+}
+
+function legendRange(
+  overlay: OverlayId,
+  depthMaxM: number,
+  vmax: number,
+): { min: number; max: number } {
+  if (overlay === "temp") return { min: TEMP_COLOR_MIN_C, max: TEMP_COLOR_MAX_C };
+  if (overlay === "wind") return { min: 0, max: WIND_COLOR_MAX_MPS };
+  if (overlay === "depth") return { min: 0, max: depthMaxM };
+  return { min: 0, max: vmax };
+}
+
+function formatLegendHover(
+  overlay: OverlayId,
+  value: number,
+  units: UnitPrefs,
+): string {
+  if (overlay === "depth") return formatDepth(value, units.wave);
+  if (overlay === "wind") return formatWindSpeed(value, units.wind);
+  if (overlay === "temp") return formatTemp(value, units.temp);
+  return formatWaveHeight(value, units.wave);
 }
 
 type Props = {
@@ -96,6 +187,8 @@ type Props = {
   onClearPoint?: () => void;
   windSlice?: WindFieldSlice | null;
   windFieldStatus?: "idle" | "loading" | "ready" | "error";
+  tempSlice?: TempFieldSlice | null;
+  tempFieldStatus?: "idle" | "loading" | "ready" | "error";
   onOverlayChange?: (id: OverlayId) => void;
 };
 
@@ -111,6 +204,7 @@ type HoverInfo = {
   windSpeedMps: number | null;
   windDirDeg: number | null;
   gustMps: number | null;
+  tempC: number | null;
 };
 
 type BasemapId = "map" | "satellite" | "topo";
@@ -118,14 +212,15 @@ type BasemapId = "map" | "satellite" | "topo";
 const BASEMAP_KEY = "chop.basemap";
 const OVERLAY_KEY = "chop.mapOverlay";
 const WIND_GLYPH_KEY = "chop.windGlyph";
+const HEATMAP_STYLE_KEY = "chop.heatmapStyle";
 
 function loadBasemap(): BasemapId {
   try {
     const v = localStorage.getItem(BASEMAP_KEY);
-    if (v === "satellite" || v === "topo") return v;
-    return "map";
+    if (v === "map" || v === "satellite") return v;
+    return "topo";
   } catch {
-    return "map";
+    return "topo";
   }
 }
 
@@ -140,10 +235,10 @@ function saveBasemap(id: BasemapId): void {
 function loadOverlay(): OverlayId {
   try {
     const v = localStorage.getItem(OVERLAY_KEY);
-    if (v === "depth" || v === "wind") return v;
-    return "waves";
+    if (v === "waves" || v === "depth" || v === "temp") return v;
+    return "wind";
   } catch {
-    return "waves";
+    return "wind";
   }
 }
 
@@ -173,12 +268,37 @@ function saveWindGlyph(id: WindGlyphId): void {
   }
 }
 
+function loadHeatmapStyle(): HeatmapStyle {
+  try {
+    return localStorage.getItem(HEATMAP_STYLE_KEY) === "edges" ? "edges" : "blend";
+  } catch {
+    return "blend";
+  }
+}
+
+function saveHeatmapStyle(id: HeatmapStyle): void {
+  try {
+    localStorage.setItem(HEATMAP_STYLE_KEY, id);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 function lakeLineWidth(selectedId: string) {
   return [
     "case",
     ["==", ["get", "lakeId"], selectedId],
-    2.8,
-    1.25,
+    ["interpolate", ["linear"], ["zoom"], 4, 2.4, 11, 3.2],
+    ["interpolate", ["linear"], ["zoom"], 4, 1.7, 11, 2.2],
+  ] as const;
+}
+
+function lakeLineCaseWidth(selectedId: string) {
+  return [
+    "case",
+    ["==", ["get", "lakeId"], selectedId],
+    ["interpolate", ["linear"], ["zoom"], 4, 4.2, 11, 5.4],
+    ["interpolate", ["linear"], ["zoom"], 4, 3.2, 11, 3.8],
   ] as const;
 }
 
@@ -202,13 +322,41 @@ function applyLakeHighlight(
       lakeLineWidth(selectedId),
     );
   }
+  if (map.getLayer("lakes-all-line-case")) {
+    map.setPaintProperty(
+      "lakes-all-line-case",
+      "line-width",
+      lakeLineCaseWidth(selectedId),
+    );
+  }
+}
+
+/** Heatmaps sit above lake fills but under outlines and names. */
+function placeHeatmapUnderLakes(map: MapLibreMap, layerId: string) {
+  if (!map.getLayer(layerId)) return;
+  const before = map.getLayer("lakes-all-line-case")
+    ? "lakes-all-line-case"
+    : map.getLayer("lakes-all-line")
+      ? "lakes-all-line"
+      : map.getLayer("lakes-labels")
+        ? "lakes-labels"
+        : undefined;
+  if (before) map.moveLayer(layerId, before);
+}
+
+/** MapLibre canvas sources skip prepare() until a covering tile exists; poke after paint. */
+function publishWindFieldSource(map: MapLibreMap): void {
+  const src = map.getSource("wind-field") as CanvasSource | undefined;
+  if (!src) return;
+  src.play?.();
+  src.setCoordinates(windCanvasCoordinates());
+  map.triggerRepaint();
 }
 
 const BASEMAP_LAYER_IDS = [
   "basemap-satellite",
   "basemap-map",
   "basemap-topo-hillshade",
-  "basemap-topo",
 ] as const;
 
 function ensureBasemapLayers(map: MapLibreMap): void {
@@ -225,20 +373,6 @@ function ensureBasemapLayers(map: MapLibreMap): void {
         "Tiles &copy; Esri — Source: Esri, USGS, NOAA, and the GIS User Community",
     });
   }
-  if (!map.getSource("topo")) {
-    map.addSource("topo", {
-      type: "raster",
-      tiles: [
-        "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
-        "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
-        "https://c.tile.opentopomap.org/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      maxzoom: 17,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
-    });
-  }
   if (!map.getLayer("basemap-topo-hillshade")) {
     map.addLayer(
       {
@@ -253,19 +387,8 @@ function ensureBasemapLayers(map: MapLibreMap): void {
       beforeId,
     );
   }
-  if (!map.getLayer("basemap-topo")) {
-    map.addLayer(
-      {
-        id: "basemap-topo",
-        type: "raster",
-        source: "topo",
-        layout: { visibility: "none" },
-        paint: { "raster-opacity": 0.72 },
-        minzoom: 0,
-        maxzoom: 22,
-      },
-      beforeId,
-    );
+  if (map.getLayer("basemap-topo")) {
+    map.setLayoutProperty("basemap-topo", "visibility", "none");
   }
 }
 
@@ -283,7 +406,16 @@ function applyBasemap(
   vis("basemap-map", id === "map");
   vis("basemap-satellite", id === "satellite");
   vis("basemap-topo-hillshade", id === "topo");
-  vis("basemap-topo", id === "topo");
+  if (map.getLayer("basemap-topo")) {
+    map.setLayoutProperty("basemap-topo", "visibility", "none");
+  }
+  if (map.getLayer("lakes-all-line-case")) {
+    map.setPaintProperty(
+      "lakes-all-line-case",
+      "line-color",
+      id === "satellite" ? "rgba(20, 28, 26, 0.75)" : "rgba(248, 246, 240, 0.92)",
+    );
+  }
   if (map.getLayer("lakes-all-line")) {
     map.setPaintProperty(
       "lakes-all-line",
@@ -325,7 +457,7 @@ function applyBasemap(
   }
 }
 
-/** Raster basemaps — Carto light, Esri World Imagery, Esri hillshade + OpenTopoMap. Overlay layers are added after load. */
+/** Raster basemaps — Carto light, Esri World Imagery, Esri hillshade. Overlay layers are added after load. */
 function makeStyle(basemap: BasemapId): StyleSpecification {
   return {
     version: 8,
@@ -362,18 +494,6 @@ function makeStyle(basemap: BasemapId): StyleSpecification {
         attribution:
           "Tiles &copy; Esri — Source: Esri, USGS, NOAA, and the GIS User Community",
       },
-      topo: {
-        type: "raster",
-        tiles: [
-          "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
-          "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
-          "https://c.tile.opentopomap.org/{z}/{x}/{y}.png",
-        ],
-        tileSize: 256,
-        maxzoom: 17,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
-      },
     },
     layers: [
       {
@@ -403,15 +523,6 @@ function makeStyle(basemap: BasemapId): StyleSpecification {
         source: "topo-hillshade",
         layout: { visibility: basemap === "topo" ? "visible" : "none" },
         paint: { "raster-opacity": 1 },
-        minzoom: 0,
-        maxzoom: 22,
-      },
-      {
-        id: "basemap-topo",
-        type: "raster",
-        source: "topo",
-        layout: { visibility: basemap === "topo" ? "visible" : "none" },
-        paint: { "raster-opacity": 0.72 },
         minzoom: 0,
         maxzoom: 22,
       },
@@ -549,6 +660,57 @@ function fitBoundsPad(
 
 function cloneFc(fc: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
   return JSON.parse(JSON.stringify(fc)) as GeoJSON.FeatureCollection;
+}
+
+/** One label point per lake (polygon labels drop easily under heatmaps / zoom). */
+function lakeLabelGeoJSON(
+  fc: GeoJSON.FeatureCollection,
+): GeoJSON.FeatureCollection {
+  const names = new Map<string, string>();
+  for (const f of fc.features) {
+    const id = f.properties?.lakeId;
+    const name = f.properties?.name;
+    if (typeof id === "string" && typeof name === "string" && !names.has(id)) {
+      names.set(id, name);
+    }
+  }
+  const features: GeoJSON.Feature[] = [];
+  for (const [id, b] of boundsByLakeId(fc)) {
+    const name = names.get(id);
+    if (!name) continue;
+    features.push({
+      type: "Feature",
+      properties: { lakeId: id, name },
+      geometry: {
+        type: "Point",
+        coordinates: [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2],
+      },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+/** LineString rings only — polygon fill+line on the same heavy source stalls the worker. */
+function lakeOutlineGeoJSON(
+  fc: GeoJSON.FeatureCollection,
+): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = [];
+  for (const f of fc.features) {
+    const rings = polygonRings(f.geometry);
+    if (rings.length === 0) continue;
+    features.push({
+      type: "Feature",
+      properties: {
+        lakeId: f.properties?.lakeId,
+        name: f.properties?.name,
+      },
+      geometry:
+        rings.length === 1
+          ? { type: "LineString", coordinates: rings[0]! }
+          : { type: "MultiLineString", coordinates: rings },
+    });
+  }
+  return { type: "FeatureCollection", features };
 }
 
 const ALBERTA_MASK = albertaMask as GeoJSON.FeatureCollection;
@@ -913,6 +1075,8 @@ export function MapView({
   onClearPoint,
   windSlice = null,
   windFieldStatus = "idle",
+  tempSlice = null,
+  tempFieldStatus = "idle",
   onOverlayChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -920,6 +1084,7 @@ export function MapView({
   const hsCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windParticleCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lakeOutlineCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windParticlesRef = useRef(createParticleField());
   const albertaWindMaskRef = useRef<HTMLCanvasElement | null>(null);
   const shoreMaskRef = useRef<HTMLCanvasElement | null>(null);
@@ -931,6 +1096,7 @@ export function MapView({
   const selectedLakeIdRef = useRef(selectedLakeId);
   const onSelectLakeRef = useRef(onSelectLake);
   const viewModeRef = useRef<"all" | "lake">("all");
+  const lakesVectorReadyRef = useRef(false);
   const fittedLakeIdRef = useRef(selectedLakeId);
   const boundsByLakeRef = useRef<
     Map<string, [[number, number], [number, number]]>
@@ -948,28 +1114,40 @@ export function MapView({
   onSelectLakeRef.current = onSelectLake;
   allShorelinesRef.current = allShorelines;
   selectedLakeIdRef.current = selectedLakeId;
+  const forecastPointRef = useRef(forecastPoint);
+  forecastPointRef.current = forecastPoint;
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>(() =>
-    typeof window !== "undefined" ? loadBasemap() : "map",
+    typeof window !== "undefined" ? loadBasemap() : "topo",
   );
   const [overlay, setOverlay] = useState<OverlayId>(() =>
-    typeof window !== "undefined" ? loadOverlay() : "waves",
+    typeof window !== "undefined" ? loadOverlay() : "wind",
   );
+  const [legendHoverT, setLegendHoverT] = useState<number | null>(null);
   const [windGlyph, setWindGlyph] = useState<WindGlyphId>(() =>
     typeof window !== "undefined" ? loadWindGlyph() : "particles",
   );
+  const [heatmapStyle, setHeatmapStyle] = useState<HeatmapStyle>(() =>
+    typeof window !== "undefined" ? loadHeatmapStyle() : "blend",
+  );
+  const [fieldHeatmapReady, setFieldHeatmapReady] = useState(false);
   const overlayRef = useRef(overlay);
   const windGlyphRef = useRef(windGlyph);
+  const heatmapStyleRef = useRef(heatmapStyle);
   const windSliceRef = useRef(windSlice);
+  const tempSliceRef = useRef(tempSlice);
   const simulatingRef = useRef(simulating);
   overlayRef.current = overlay;
   windGlyphRef.current = windGlyph;
+  heatmapStyleRef.current = heatmapStyle;
   windSliceRef.current = windSlice;
+  tempSliceRef.current = tempSlice;
   simulatingRef.current = simulating;
 
   useEffect(() => {
     onOverlayChange?.(overlay);
+    setLegendHoverT(null);
   }, [overlay, onOverlayChange]);
 
   gridsRef.current = grids;
@@ -989,6 +1167,11 @@ export function MapView({
     [grids.depth, grids.meta.nodata],
   );
   const depthIntervalM = grids.meta.contourIntervalM ?? 1;
+  const { min: legendMin, max: legendMax } = legendRange(
+    overlay,
+    depthMaxM,
+    vmax,
+  );
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -1002,7 +1185,10 @@ export function MapView({
     map.addControl(new NavigationControl({ visualizePitch: false }), "top-right");
     mapRef.current = map;
 
-    map.on("load", () => {
+    // style.load fires when the style JSON is ready. map "load" waits for every
+    // raster source, including hidden Satellite/Topo tiles, so overlays never boot.
+    const bootOverlays = () => {
+      if (map.getLayer("lakes-labels")) return;
       map.resize();
 
       map.addSource("alberta-mask", { type: "geojson", data: ALBERTA_MASK });
@@ -1054,7 +1240,9 @@ export function MapView({
       if (lakesFc) boundsByLakeRef.current = boundsByLakeId(lakesFc);
       map.addSource("lakes-all", {
         type: "geojson",
-        data: lakesFc ? cloneFc(lakesFc) : EMPTY_FC,
+        data: EMPTY_FC,
+        tolerance: 1.2,
+        buffer: 32,
       });
       map.addLayer({
         id: "lakes-all-fill",
@@ -1065,33 +1253,53 @@ export function MapView({
           "fill-opacity": 0.18,
         },
       });
+      map.addSource("lakes-all-outlines", {
+        type: "geojson",
+        data: EMPTY_FC,
+        tolerance: 0.4,
+        buffer: 32,
+      });
+      map.addLayer({
+        id: "lakes-all-line-case",
+        type: "line",
+        source: "lakes-all-outlines",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "rgba(248, 246, 240, 0.92)",
+          "line-width": lakeLineCaseWidth(selectedLakeIdRef.current),
+          "line-opacity": 1,
+        },
+      });
       map.addLayer({
         id: "lakes-all-line",
         type: "line",
-        source: "lakes-all",
+        source: "lakes-all-outlines",
+        layout: { "line-join": "round", "line-cap": "round" },
         paint: {
           "line-color": "#163a44",
           "line-width": lakeLineWidth(selectedLakeIdRef.current),
+          "line-opacity": 1,
         },
+      });
+      map.addSource("lakes-label-points", {
+        type: "geojson",
+        data: EMPTY_FC,
       });
       map.addLayer({
         id: "lakes-labels",
         type: "symbol",
-        source: "lakes-all",
-        minzoom: 5,
-        maxzoom: 11.2,
+        source: "lakes-label-points",
         layout: {
+          visibility: "none",
           "text-field": ["get", "name"],
           "text-size": 12,
           "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
-          "text-variable-anchor": ["center", "top", "bottom"],
-          "text-padding": 4,
-          "text-optional": true,
+          "text-anchor": "center",
         },
         paint: {
           "text-color": "#163a44",
-          "text-halo-color": "rgba(248, 246, 240, 0.9)",
-          "text-halo-width": 1.5,
+          "text-halo-color": "rgba(248, 246, 240, 0.95)",
+          "text-halo-width": 1.8,
         },
       });
 
@@ -1111,10 +1319,10 @@ export function MapView({
         id: "hs-layer",
         type: "raster",
         source: "hs",
-        layout: { visibility: overlay === "wind" ? "none" : "visible" },
+        layout: { visibility: showsFieldHeatmap(overlay) ? "none" : "visible" },
         paint: {
           "raster-opacity": 0.92,
-          "raster-resampling": "linear",
+          "raster-resampling": heatmapStyle === "edges" ? "nearest" : "linear",
           "raster-fade-duration": 0,
         },
       });
@@ -1135,13 +1343,15 @@ export function MapView({
         id: "wind-field",
         type: "raster",
         source: "wind-field",
-        layout: { visibility: overlay === "wind" ? "visible" : "none" },
+        layout: { visibility: showsFieldHeatmap(overlay) ? "visible" : "none" },
         paint: {
-          "raster-opacity": 0.9,
-          "raster-resampling": "linear",
+          "raster-opacity": 1,
+          "raster-resampling": heatmapStyle === "edges" ? "nearest" : "linear",
           "raster-fade-duration": 0,
         },
       });
+      placeHeatmapUnderLakes(map, "hs-layer");
+      placeHeatmapUnderLakes(map, "wind-field");
 
       map.addSource("depth-contours", { type: "geojson", data: EMPTY_FC });
       map.addLayer({
@@ -1186,6 +1396,7 @@ export function MapView({
         id: "forecast-point-halo",
         type: "circle",
         source: "forecast-point",
+        layout: { visibility: "none" },
         paint: {
           "circle-radius": 9,
           "circle-color": "#f8f6f0",
@@ -1198,6 +1409,7 @@ export function MapView({
         id: "forecast-point-dot",
         type: "circle",
         source: "forecast-point",
+        layout: { visibility: "none" },
         paint: {
           "circle-radius": 4,
           "circle-color": "#0f6b5c",
@@ -1447,7 +1659,6 @@ export function MapView({
       applyBasemap(map, loadBasemap(), selectedLakeIdRef.current);
       const overview = allShorelinesRef.current;
       if (overview && overview.features.length > 0) {
-        fitFeatureCollection(map, overview, 0);
         viewModeRef.current = "all";
         fittedLakeIdRef.current = selectedLakeIdRef.current;
       } else {
@@ -1455,7 +1666,9 @@ export function MapView({
         viewModeRef.current = "lake";
       }
       setReady(true);
-    });
+    };
+    if (map.isStyleLoaded()) bootOverlays();
+    else map.once("style.load", bootOverlays);
 
     map.on("movestart", (e) => {
       if (!e.originalEvent) return;
@@ -1472,11 +1685,29 @@ export function MapView({
         windSliceRef.current,
         simulatingRef.current,
       );
-      const field = slice ? sampleWindField(slice, lng, lat) : null;
+      const field = slice
+        ? sampleWindField(slice, lng, lat, heatmapStyleRef.current)
+        : null;
       const windMode = overlayRef.current === "wind";
+      const tempMode = overlayRef.current === "temp";
+      const tempSlice = tempSliceRef.current ?? null;
+      const airC = tempSlice
+        ? sampleTempField(tempSlice, lng, lat, heatmapStyleRef.current)
+        : null;
       if (windMode) {
         const overField = slice ? inWindFieldExtent(slice, lng, lat) : false;
         if (!overField && !onWater && !field) {
+          setHover(null);
+          return;
+        }
+      } else if (tempMode) {
+        const overField = tempSlice
+          ? lng >= tempSlice.west &&
+            lng <= tempSlice.east &&
+            lat >= tempSlice.south &&
+            lat <= tempSlice.north
+          : false;
+        if (!overField && !onWater && airC == null) {
           setHover(null);
           return;
         }
@@ -1512,6 +1743,7 @@ export function MapView({
         windSpeedMps: field?.speedMps ?? (windMode ? null : currentWind?.windSpeedMps ?? null),
         windDirDeg: field?.dirDeg ?? (windMode ? null : currentWind?.windDirDeg ?? null),
         gustMps: field || windMode ? null : currentWind?.gustMps ?? null,
+        tempC: airC,
       });
     });
 
@@ -1570,6 +1802,7 @@ export function MapView({
       map.resize();
       if (followCursorRef.current || userMovedRef.current) return;
       if (viewModeRef.current === "all" && allShorelinesRef.current) {
+        if (!lakesVectorReadyRef.current) return;
         fitFeatureCollection(map, allShorelinesRef.current, 0);
         return;
       }
@@ -1640,12 +1873,72 @@ export function MapView({
     if (!allShorelines) return;
     boundsByLakeRef.current = boundsByLakeId(allShorelines);
     if (!map || !ready) return;
-    const src = map.getSource("lakes-all") as GeoJSONSource | undefined;
-    src?.setData(cloneFc(allShorelines));
-    if (!userMovedRef.current && viewModeRef.current === "all") {
-      fitFeatureCollection(map, allShorelines, 0);
-    }
+    lakesVectorReadyRef.current = false;
+    const outlines = map.getSource("lakes-all-outlines") as GeoJSONSource | undefined;
+    const labels = map.getSource("lakes-label-points") as GeoJSONSource | undefined;
+    const fill = map.getSource("lakes-all") as GeoJSONSource | undefined;
+    let poll = 0;
+    let sawLoading = false;
+
+    const finish = () => {
+      if (lakesVectorReadyRef.current) return;
+      lakesVectorReadyRef.current = true;
+      window.clearInterval(poll);
+      map.off("sourcedata", onSource);
+      fill?.setData(cloneFc(allShorelines));
+      if (!userMovedRef.current && viewModeRef.current === "all") {
+        fitFeatureCollection(map, allShorelines, 0);
+      }
+    };
+    const onSource = (e: { sourceId?: string; isSourceLoaded?: boolean }) => {
+      if (e.sourceId !== "lakes-all-outlines") return;
+      if (!e.isSourceLoaded) {
+        sawLoading = true;
+        return;
+      }
+      if (sawLoading) finish();
+    };
+    map.on("sourcedata", onSource);
+    outlines?.setData(lakeOutlineGeoJSON(allShorelines));
+    labels?.setData(lakeLabelGeoJSON(allShorelines));
+    poll = window.setInterval(() => {
+      if (!map.isSourceLoaded("lakes-all-outlines")) {
+        sawLoading = true;
+        return;
+      }
+      if (sawLoading) finish();
+    }, 100);
+    return () => {
+      map.off("sourcedata", onSource);
+      window.clearInterval(poll);
+    };
   }, [allShorelines, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const canvas = lakeOutlineCanvasRef.current;
+    if (!map || !ready || !canvas) return;
+    const draw = () => {
+      drawLakeOutlines(
+        canvas,
+        map,
+        allShorelinesRef.current,
+        selectedLakeIdRef.current,
+        basemap === "satellite",
+        forecastPointRef.current,
+      );
+    };
+    draw();
+    map.on("move", draw);
+    map.on("resize", draw);
+    const ro = new ResizeObserver(draw);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => {
+      map.off("move", draw);
+      map.off("resize", draw);
+      ro.disconnect();
+    };
+  }, [ready, allShorelines, selectedLakeId, basemap, forecastPoint]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1690,7 +1983,7 @@ export function MapView({
       mask = buildShoreMaskCanvas(grids.meta, shorelineRef.current);
       shoreMaskRef.current = mask;
     }
-    if (spot.spotId !== selectedLakeId || overlay === "wind") {
+    if (spot.spotId !== selectedLakeId || showsFieldHeatmap(overlay)) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
@@ -1699,6 +1992,7 @@ export function MapView({
         ctx,
         depthToImageData(grids.depth, grids.meta, depthMaxM, DEFAULT_DEPTH_SCALE),
         mask,
+        heatmapStyle === "blend",
       );
       return;
     }
@@ -1710,8 +2004,9 @@ export function MapView({
       ctx,
       hsToImageData(hs, grids.meta, vmax, DEFAULT_WAVE_SCALE),
       mask,
+      heatmapStyle === "blend",
     );
-  }, [hs, overlay, ready, grids, vmax, depthMaxM, spot.spotId, selectedLakeId]);
+  }, [hs, overlay, ready, grids, vmax, depthMaxM, spot.spotId, selectedLakeId, heatmapStyle]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1734,58 +2029,95 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const showHeatmap = showsWindHeatmap(overlay);
+    const showHeatmap = showsFieldHeatmap(overlay);
     const showGlyphs = showsWindGlyphs(overlay);
     const showHs = !showHeatmap && spot.spotId === selectedLakeId;
     if (map.getLayer("hs-layer")) {
       map.setLayoutProperty("hs-layer", "visibility", showHs ? "visible" : "none");
+      map.setPaintProperty(
+        "hs-layer",
+        "raster-resampling",
+        heatmapStyle === "edges" ? "nearest" : "linear",
+      );
     }
     if (map.getLayer("wind-field")) {
       map.setLayoutProperty("wind-field", "visibility", showHeatmap ? "visible" : "none");
+      map.setPaintProperty(
+        "wind-field",
+        "raster-resampling",
+        heatmapStyle === "edges" ? "nearest" : "linear",
+      );
     }
     try {
       ensureWindArrowsLineLayer(map, showGlyphs && windGlyph === "arrows");
     } catch (err) {
       console.error("Wind arrows layer failed", err);
     }
-    if (showHeatmap && map.getLayer("wind-field")) map.moveLayer("wind-field");
+    if (map.getLayer("hs-layer")) placeHeatmapUnderLakes(map, "hs-layer");
+    if (showHeatmap && map.getLayer("wind-field")) {
+      placeHeatmapUnderLakes(map, "wind-field");
+    }
+    if (map.getLayer("lakes-all-line-case")) map.moveLayer("lakes-all-line-case");
+    if (map.getLayer("lakes-all-line")) map.moveLayer("lakes-all-line");
+    if (map.getLayer("lakes-labels")) map.moveLayer("lakes-labels");
     if (showGlyphs && map.getLayer("wind-arrows")) map.moveLayer("wind-arrows");
     if (map.getLayer("wind-dir")) {
       map.setLayoutProperty("wind-dir", "visibility", showGlyphs ? "none" : "visible");
     }
-  }, [overlay, ready, spot.spotId, selectedLakeId, windGlyph]);
+  }, [overlay, ready, spot.spotId, selectedLakeId, windGlyph, heatmapStyle]);
 
   useEffect(() => {
     const map = mapRef.current;
     const canvas = windCanvasRef.current;
     if (!map || !ready || !canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
+    let raf = 0;
+    let cancelled = false;
+    const markPainted = () => {
+      publishWindFieldSource(map);
+      raf = window.requestAnimationFrame(() => {
+        if (cancelled) return;
+        map.triggerRepaint();
+        raf = window.requestAnimationFrame(() => {
+          if (cancelled) return;
+          setFieldHeatmapReady(true);
+        });
+      });
+    };
     const apply = () => {
       const slice = spatialWindSlice(
         windSliceRef.current,
         simulatingRef.current,
       );
       const overlayNow = overlayRef.current;
-      const showHeatmap = showsWindHeatmap(overlayNow);
+      const showWindHeat = showsWindHeatmap(overlayNow);
+      const showTempHeat = showsTempHeatmap(overlayNow);
       const showGlyphs = showsWindGlyphs(overlayNow);
-      if (!slice || (!showHeatmap && !showGlyphs)) {
+      const tempNow = simulatingRef.current
+        ? null
+        : (tempSliceRef.current ?? null);
+      if (!showWindHeat && !showTempHeat && !showGlyphs) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const src = map.getSource("wind-arrows") as GeoJSONSource | undefined;
         src?.setData(EMPTY_FC);
+        setFieldHeatmapReady(true);
         return;
       }
-      if (showHeatmap) {
-        let mask = albertaWindMaskRef.current;
-        if (!mask) {
-          mask = buildAlbertaWindMask();
-          albertaWindMaskRef.current = mask;
-        }
-        paintWindField(ctx, slice, mask);
-        map.triggerRepaint();
+      if (showTempHeat && tempNow) {
+        const mask = buildAlbertaWindMask();
+        albertaWindMaskRef.current = mask;
+        paintTempField(ctx, tempNow, mask, heatmapStyleRef.current);
+        markPainted();
+      } else if (showWindHeat && slice) {
+        const mask = buildAlbertaWindMask();
+        albertaWindMaskRef.current = mask;
+        paintWindField(ctx, slice, mask, heatmapStyleRef.current);
+        markPainted();
       } else {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         map.triggerRepaint();
+        setFieldHeatmapReady(true);
       }
       applyArrows();
       if (
@@ -1817,12 +2149,15 @@ export function MapView({
         console.error("Wind arrows failed", err);
       }
     };
+    setFieldHeatmapReady(false);
     apply();
     map.on("zoomend", applyArrows);
     return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(raf);
       map.off("zoomend", applyArrows);
     };
-  }, [overlay, windSlice, ready, simulating, windGlyph]);
+  }, [overlay, windSlice, tempSlice, ready, simulating, windGlyph, heatmapStyle]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2039,6 +2374,77 @@ export function MapView({
     src.setData(windPerpTicksGeoJSON(gpxWindTicks, gpxWindTickIndex ?? null));
   }, [gpxWindTicks, gpxWindTickIndex, ready]);
 
+  const legendNotes = useMemo(() => {
+    const source =
+      overlay === "depth"
+        ? `Shallow (light) to deep (dark). ${depthIntervalM} m contours.`
+        : overlay === "temp"
+          ? tempFieldStatus === "loading" || tempFieldStatus === "idle"
+            ? "Loading GEM temperature…"
+            : tempFieldStatus === "error"
+              ? "Temperature field unavailable."
+              : simulating
+                ? "No simulated temperature."
+                : tempSlice
+                  ? "GEM 2 m over Alberta (HRDPS, then RDPS / GDPS)."
+                  : "No provincial temperature field this hour."
+          : overlay === "wind"
+            ? windFieldStatus === "loading" || windFieldStatus === "idle"
+              ? "Loading GEM wind field…"
+              : windFieldStatus === "error"
+                ? "Wind field unavailable."
+                : simulating
+                  ? `Uniform simulated wind. Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
+                  : spatialWindSlice(windSlice, false)
+                    ? `GEM 10 m over Alberta (HRDPS, then RDPS / GDPS). Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
+                    : "No provincial wind field this hour."
+            : simulating
+              ? "SMB fetch-limited + depth cap. Wind: simulator."
+              : gpxCursor
+                ? "SMB fetch-limited + depth cap. Wind: HRDPS (session)."
+                : historic
+                  ? "SMB fetch-limited + depth cap. Wind: HRDPS (history)."
+                  : "SMB fetch-limited + depth cap. Wind: HRDPS ~48 h, then RDPS / GDPS.";
+    const hint =
+      overlay === "wind" || overlay === "temp"
+        ? "Click a lake to select it."
+        : forecastPoint
+          ? null
+          : "Click the lake to pin a forecast spot.";
+    return hint ? [source, hint] : [source];
+  }, [
+    overlay,
+    depthIntervalM,
+    tempFieldStatus,
+    simulating,
+    tempSlice,
+    windFieldStatus,
+    windGlyph,
+    windSlice,
+    gpxCursor,
+    historic,
+    forecastPoint,
+  ]);
+
+  const fieldSliceReady =
+    overlay === "wind"
+      ? !!spatialWindSlice(windSlice, simulating)
+      : overlay === "temp"
+        ? !!tempSlice
+        : false;
+  const fieldStatusPending =
+    overlay === "wind"
+      ? windFieldStatus === "loading" || windFieldStatus === "idle"
+      : overlay === "temp"
+        ? tempFieldStatus === "loading" || tempFieldStatus === "idle"
+        : false;
+  const heatmapLoading =
+    !simulating &&
+    showsFieldHeatmap(overlay) &&
+    (fieldStatusPending || !ready || (fieldSliceReady && !fieldHeatmapReady));
+  const heatmapLoadingLabel =
+    overlay === "temp" ? "Loading temperature field…" : "Loading wind field…";
+
   return (
     <div className="map-wrap">
       <div ref={containerRef} className="map" />
@@ -2051,7 +2457,29 @@ export function MapView({
         }
         aria-hidden="true"
       />
+      <canvas
+        ref={lakeOutlineCanvasRef}
+        className="lake-outlines"
+        aria-hidden="true"
+      />
+      {heatmapLoading ? (
+        <div className="map-heatmap-loading" role="status">
+          <span className="map-heatmap-spinner" aria-hidden="true" />
+          {heatmapLoadingLabel}
+        </div>
+      ) : null}
       <div className="basemap-toggle overlay-toggle" role="group" aria-label="Map overlay">
+        <button
+          type="button"
+          className={overlay === "wind" ? "is-on" : ""}
+          aria-pressed={overlay === "wind"}
+          onClick={() => {
+            setOverlay("wind");
+            saveOverlay("wind");
+          }}
+        >
+          Wind
+        </button>
         <button
           type="button"
           className={overlay === "waves" ? "is-on" : ""}
@@ -2065,6 +2493,17 @@ export function MapView({
         </button>
         <button
           type="button"
+          className={overlay === "temp" ? "is-on" : ""}
+          aria-pressed={overlay === "temp"}
+          onClick={() => {
+            setOverlay("temp");
+            saveOverlay("temp");
+          }}
+        >
+          Temp
+        </button>
+        <button
+          type="button"
           className={overlay === "depth" ? "is-on" : ""}
           aria-pressed={overlay === "depth"}
           onClick={() => {
@@ -2074,20 +2513,43 @@ export function MapView({
         >
           Depth
         </button>
-        <button
-          type="button"
-          className={overlay === "wind" ? "is-on" : ""}
-          aria-pressed={overlay === "wind"}
-          onClick={() => {
-            setOverlay("wind");
-            saveOverlay("wind");
-          }}
-        >
-          Wind
-        </button>
       </div>
+      {showsFieldHeatmap(overlay) ? (
+        <div className="basemap-toggle heatmap-style-toggle" role="group" aria-label="Heatmap style">
+          <button
+            type="button"
+            className={heatmapStyle === "blend" ? "is-on" : ""}
+            aria-pressed={heatmapStyle === "blend"}
+            onClick={() => {
+              setHeatmapStyle("blend");
+              saveHeatmapStyle("blend");
+            }}
+          >
+            Blend
+          </button>
+          <button
+            type="button"
+            className={heatmapStyle === "edges" ? "is-on" : ""}
+            aria-pressed={heatmapStyle === "edges"}
+            onClick={() => {
+              setHeatmapStyle("edges");
+              saveHeatmapStyle("edges");
+            }}
+          >
+            Edges
+          </button>
+        </div>
+      ) : null}
       {showsWindGlyphs(overlay) ? (
-        <div className="basemap-toggle wind-glyph-toggle" role="group" aria-label="Wind glyphs">
+        <div
+          className={
+            showsFieldHeatmap(overlay)
+              ? "basemap-toggle wind-glyph-toggle"
+              : "basemap-toggle wind-glyph-toggle is-up"
+          }
+          role="group"
+          aria-label="Wind glyphs"
+        >
           <button
             type="button"
             className={windGlyph === "arrows" ? "is-on" : ""}
@@ -2115,6 +2577,14 @@ export function MapView({
       <div className="basemap-toggle" role="group" aria-label="Basemap">
         <button
           type="button"
+          className={basemap === "topo" ? "is-on" : ""}
+          aria-pressed={basemap === "topo"}
+          onClick={() => setBasemap("topo")}
+        >
+          Topo
+        </button>
+        <button
+          type="button"
           className={basemap === "map" ? "is-on" : ""}
           aria-pressed={basemap === "map"}
           onClick={() => setBasemap("map")}
@@ -2129,81 +2599,93 @@ export function MapView({
         >
           Satellite
         </button>
-        <button
-          type="button"
-          className={basemap === "topo" ? "is-on" : ""}
-          aria-pressed={basemap === "topo"}
-          onClick={() => setBasemap("topo")}
-        >
-          Topo
-        </button>
       </div>
       <div className="legend">
         <div className="legend-title">
-          {overlay === "depth"
-            ? "Depth"
-            : overlay === "wind"
-              ? "Wind speed"
-              : "Wave height Hs"}
+          <span>
+            {overlay === "depth"
+              ? `Depth (${legendUnit(overlay, units)})`
+              : overlay === "wind"
+                ? `Wind speed (${legendUnit(overlay, units)})`
+                : overlay === "temp"
+                  ? `Temperature (${legendUnit(overlay, units)})`
+                  : `Wave height Hs (${legendUnit(overlay, units)})`}
+          </span>
+          <button
+            type="button"
+            className="legend-info"
+            aria-label={legendNotes.join(" ")}
+          >
+            <span className="legend-info-mark" aria-hidden>
+              i
+            </span>
+            <span className="legend-info-tip" role="tooltip">
+              {legendNotes.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </span>
+          </button>
         </div>
         <div
-          className="legend-bar"
-          style={{
-            background: scaleGradientCss(
-              overlay === "depth"
-                ? DEFAULT_DEPTH_SCALE
-                : overlay === "wind"
-                  ? DEFAULT_WIND_SCALE
-                  : DEFAULT_WAVE_SCALE,
-            ),
+          className="legend-bar-hit"
+          onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            if (rect.width <= 0) return;
+            setLegendHoverT(
+              Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+            );
           }}
-        />
-        <div className="legend-scale">
-          <span>
-            {overlay === "depth"
-              ? formatDepth(0, units.wave)
-              : overlay === "wind"
-                ? formatWindSpeed(0, units.wind)
-                : "0"}
-          </span>
-          <span>
-            {overlay === "depth"
-              ? formatDepth(depthMaxM, units.wave)
-              : overlay === "wind"
-                ? formatWindSpeed(WIND_COLOR_MAX_MPS, units.wind)
-                : formatWaveHeight(vmax, units.wave)}
-          </span>
+          onPointerLeave={() => setLegendHoverT(null)}
+        >
+          <div
+            className="legend-bar"
+            style={{
+              background: scaleGradientCss(legendScale(overlay)),
+            }}
+          />
+          {legendHoverT != null && (
+            <>
+              <span
+                className="legend-bar-marker"
+                style={{ left: `${legendHoverT * 100}%` }}
+              />
+              <span
+                className={`legend-bar-readout${
+                  legendHoverT < 0.12
+                    ? " is-start"
+                    : legendHoverT > 0.88
+                      ? " is-end"
+                      : ""
+                }`}
+                style={{ left: `${legendHoverT * 100}%` }}
+              >
+                <span
+                  className="legend-bar-swatch"
+                  style={{
+                    background: `rgb(${sampleRgb(legendScale(overlay), legendHoverT).join(",")})`,
+                  }}
+                />
+                {formatLegendHover(
+                  overlay,
+                  legendMin + legendHoverT * (legendMax - legendMin),
+                  units,
+                )}
+              </span>
+            </>
+          )}
         </div>
-        <p className="legend-note">
-          {overlay === "depth"
-            ? `Shallow (light) to deep (dark). ${depthIntervalM} m contours.`
-            : overlay === "wind"
-              ? windFieldStatus === "loading"
-                ? "Loading GEM wind field…"
-                : windFieldStatus === "error"
-                  ? "Wind field unavailable."
-                  : simulating
-                    ? `Uniform simulated wind. Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
-                    : spatialWindSlice(windSlice, false)
-                      ? `GEM 10 m over Alberta (HRDPS, then RDPS / GDPS). Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
-                      : "No provincial wind field this hour."
-              : simulating
-                ? "SMB fetch-limited + depth cap. Wind: simulator."
-                : gpxCursor
-                  ? "SMB fetch-limited + depth cap. Wind: HRDPS (session)."
-                  : historic
-                    ? "SMB fetch-limited + depth cap. Wind: HRDPS (history)."
-                    : "SMB fetch-limited + depth cap. Wind: HRDPS ~48 h, then RDPS / GDPS."}
-        </p>
-        {overlay === "wind" ? (
-          <p className="legend-note">Click a lake to select it.</p>
-        ) : forecastPoint ? (
+        <div className="legend-scale">
+          {legendStops(legendMin, legendMax).map((value, i) => (
+            <span key={`${overlay}-${i}`}>
+              {formatLegendTick(overlay, value, units)}
+            </span>
+          ))}
+        </div>
+        {forecastPoint ? (
           <button type="button" className="legend-pin-btn" onClick={() => onClearPoint?.()}>
             Pinned spot · Clear
           </button>
-        ) : (
-          <p className="legend-note">Click the lake to pin a forecast spot.</p>
-        )}
+        ) : null}
       </div>
       {hover && (
         <div
@@ -2213,7 +2695,31 @@ export function MapView({
             top: Math.max(8, hover.y - 8),
           }}
         >
-          {overlay === "wind" ? (
+          {overlay === "temp" ? (
+            <>
+              <div className="hover-primary">
+                {hover.tempC != null && Number.isFinite(hover.tempC)
+                  ? formatTemp(hover.tempC, units.temp)
+                  : "Temp —"}
+              </div>
+              {hover.onWater && (
+                <>
+                  <div className="hover-primary">
+                    Wave{" "}
+                    {hover.hsM != null && Number.isFinite(hover.hsM)
+                      ? formatWaveHeight(hover.hsM, units.wave)
+                      : "—"}
+                  </div>
+                  <div className="hover-meta">
+                    Depth {formatDepth(hover.depthM, units.wave)}
+                    {hover.fetchM != null
+                      ? ` · Fetch ${(hover.fetchM / 1000).toFixed(1)} km`
+                      : ""}
+                  </div>
+                </>
+              )}
+            </>
+          ) : overlay === "wind" ? (
             <>
               <div className="hover-primary">
                 {hover.windSpeedMps != null && hover.windDirDeg != null
@@ -2241,6 +2747,23 @@ export function MapView({
                   </div>
                 </>
               )}
+            </>
+          ) : overlay === "depth" ? (
+            <>
+              <div className="hover-primary">
+                Depth {formatDepth(hover.depthM, units.wave)}
+              </div>
+              <div className="hover-primary">
+                Wave{" "}
+                {hover.hsM != null && Number.isFinite(hover.hsM)
+                  ? formatWaveHeight(hover.hsM, units.wave)
+                  : "—"}
+              </div>
+              <div className="hover-meta">
+                {hover.fetchM != null
+                  ? `Fetch ${(hover.fetchM / 1000).toFixed(1)} km`
+                  : ""}
+              </div>
             </>
           ) : (
             <>

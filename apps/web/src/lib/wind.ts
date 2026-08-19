@@ -8,6 +8,7 @@ export type WindHour = {
   gustMps: number | null;
   weatherCode: number | null;
   precipMm: number;
+  tempC: number | null;
 };
 
 export type WindForecast = {
@@ -25,6 +26,7 @@ type GemHourlyResponse = {
     wind_gusts_10m?: Array<number | null>;
     weather_code?: Array<number | null>;
     precipitation?: Array<number | null>;
+    temperature_2m?: Array<number | null>;
   };
   hours?: WindHour[];
   model?: string;
@@ -33,7 +35,11 @@ type GemHourlyResponse = {
 
 function parseGemHours(data: GemHourlyResponse): WindHour[] {
   if (Array.isArray(data.hours) && data.hours.length > 0) {
-    return data.hours;
+    return data.hours.map((h) => ({
+      ...h,
+      precipMm: h.precipMm ?? 0,
+      tempC: h.tempC != null && Number.isFinite(h.tempC) ? h.tempC : null,
+    }));
   }
   const t: string[] = data.hourly?.time ?? [];
   const spd: Array<number | null> = data.hourly?.wind_speed_10m ?? [];
@@ -41,11 +47,13 @@ function parseGemHours(data: GemHourlyResponse): WindHour[] {
   const gust: Array<number | null> = data.hourly?.wind_gusts_10m ?? [];
   const code: Array<number | null> = data.hourly?.weather_code ?? [];
   const precip: Array<number | null> = data.hourly?.precipitation ?? [];
+  const temp: Array<number | null> = data.hourly?.temperature_2m ?? [];
   const hours: WindHour[] = [];
   for (let i = 0; i < t.length; i++) {
     const windSpeedMps = spd[i];
     const windDirDeg = dir[i];
     if (windSpeedMps == null || windDirDeg == null) continue;
+    const tempC = temp[i];
     hours.push({
       time: t[i]!,
       windSpeedMps,
@@ -53,6 +61,7 @@ function parseGemHours(data: GemHourlyResponse): WindHour[] {
       gustMps: gust[i] ?? null,
       weatherCode: code[i] ?? null,
       precipMm: precip[i] ?? 0,
+      tempC: tempC != null && Number.isFinite(tempC) ? tempC : null,
     });
   }
   return hours;

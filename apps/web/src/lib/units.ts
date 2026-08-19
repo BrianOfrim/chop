@@ -130,6 +130,19 @@ export function niceWaveMax(maxVal: number, unit: WaveHeightUnit): number {
   return Math.max(minCeil, Math.ceil(maxVal / step) * step);
 }
 
+/** Nice axis min/max for air temperature in the active unit. */
+export function niceTempRange(
+  minC: number,
+  maxC: number,
+  unit: TempUnit,
+): { min: number; max: number } {
+  const step = unit === "F" ? 10 : 5;
+  let min = Math.floor(celsiusToTemp(minC, unit) / step) * step;
+  let max = Math.ceil(celsiusToTemp(maxC, unit) / step) * step;
+  if (max <= min) max = min + step;
+  return { min, max };
+}
+
 export function formatWaveHeight(m: number, unit: WaveHeightUnit): string {
   const v = metersToWave(m, unit);
   if (unit === "m") return `${v.toFixed(2)} m`;

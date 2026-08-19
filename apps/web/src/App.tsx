@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MapView } from "./components/MapView";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MapView, type OverlayId } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
+import { TempChart, hasTempHours } from "./components/TempChart";
 import { WaveChart, type ForecastPoint } from "./components/WaveChart";
 import { ForecastTimeAxis } from "./components/ForecastTimeAxis";
 import { WeatherStrip } from "./components/WeatherStrip";
@@ -30,6 +31,13 @@ import {
   uniformWindSlice,
   type WindField,
 } from "./lib/windField";
+import {
+  applyTempFieldToHours,
+  fetchAlbertaTempField,
+  sampleTempField,
+  sliceTempField,
+  type TempField,
+} from "./lib/tempField";
 import {
   fetchLakeSurfaceTemp,
   type LakeSurfaceTemp,
@@ -90,6 +98,7 @@ import {
 import "./App.css";
 
 const REVIEW_FOLLOW_KEY = "chop.reviewFollow";
+const BOTTOM_PANEL_KEY = "chop.bottomPanelCollapsed";
 
 function loadReviewFollow(): boolean {
   try {
@@ -102,6 +111,22 @@ function loadReviewFollow(): boolean {
 function saveReviewFollow(on: boolean): void {
   try {
     localStorage.setItem(REVIEW_FOLLOW_KEY, on ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadBottomCollapsed(): boolean {
+  try {
+    return localStorage.getItem(BOTTOM_PANEL_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveBottomCollapsed(on: boolean): void {
+  try {
+    localStorage.setItem(BOTTOM_PANEL_KEY, on ? "1" : "0");
   } catch {
     /* ignore */
   }
@@ -144,6 +169,7 @@ export default function App() {
     "idle" | "loading" | "ready" | "no-time" | "error"
   >("idle");
   const [reviewFollow, setReviewFollow] = useState(loadReviewFollow);
+  const [bottomCollapsed, setBottomCollapsed] = useState(loadBottomCollapsed);
   const pendingSessionRef = useRef<GpxTrack | null>(null);
   const gpxInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +191,19 @@ export default function App() {
   const [rangeWindStatus, setRangeWindStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
-  const [needWindField, setNeedWindField] = useState(false);
+  const [needWindField, setNeedWindField] = useState(true);
+  const [needTempField, setNeedTempField] = useState(false);
+  const [forecastTempField, setForecastTempField] = useState<TempField | null>(
+    null,
+  );
+  const [forecastTempStatus, setForecastTempStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+
+  const onOverlayChange = useCallback((id: OverlayId) => {
+    setNeedWindField(id === "wind" || id === "waves");
+    setNeedTempField(id === "temp");
+  }, []);
 
   function updateUnits(patch: Partial<UnitPrefs>) {
     setUnits((prev) => {
@@ -192,9 +230,9 @@ export default function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
+  const windFetchBlocked = forecastWindStatus === "error";
   useEffect(() => {
-    if (forecastWindField) return;
-    if (forecastWindStatus === "error") return;
+    if (forecastWindField || windFetchBlocked) return;
     let cancelled = false;
     setForecastWindStatus("loading");
     fetchAlbertaWindField()
@@ -212,13 +250,41 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [forecastWindField, forecastWindStatus]);
+  }, [forecastWindField, windFetchBlocked]);
 
   useEffect(() => {
     if (forecastWindStatus !== "error") return;
     const id = window.setTimeout(() => setForecastWindStatus("idle"), 120_000);
     return () => window.clearTimeout(id);
   }, [forecastWindStatus]);
+
+  const tempFetchBlocked = forecastTempStatus === "error";
+  useEffect(() => {
+    if (!needTempField || forecastTempField || tempFetchBlocked) return;
+    let cancelled = false;
+    setForecastTempStatus("loading");
+    fetchAlbertaTempField()
+      .then((field) => {
+        if (cancelled) return;
+        setForecastTempField(field);
+        setForecastTempStatus("ready");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("Alberta temp field failed", e);
+        setForecastTempField(null);
+        setForecastTempStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [needTempField, forecastTempField, tempFetchBlocked]);
+
+  useEffect(() => {
+    if (forecastTempStatus !== "error") return;
+    const id = window.setTimeout(() => setForecastTempStatus("idle"), 120_000);
+    return () => window.clearTimeout(id);
+  }, [forecastTempStatus]);
 
   useEffect(() => {
     if (lakes.length === 0) return;
@@ -349,13 +415,19 @@ export default function App() {
       ? sliceForecastHours(forecast.hours, forecastRange)
       : [];
     if (!lakeWindAt) return sliced;
-    return applyHrdpsFieldToHours(
+    const withWind = applyHrdpsFieldToHours(
       sliced,
       forecastWindField,
       lakeWindAt.lon,
       lakeWindAt.lat,
     );
-  }, [forecast, forecastRange, forecastWindField, lakeWindAt]);
+    return applyTempFieldToHours(
+      withWind,
+      forecastTempField,
+      lakeWindAt.lon,
+      lakeWindAt.lat,
+    );
+  }, [forecast, forecastRange, forecastWindField, forecastTempField, lakeWindAt]);
 
   const historyHours = useMemo(
     () =>
@@ -570,6 +642,7 @@ export default function App() {
       gustMps: null,
       weatherCode: null,
       precipMm: 0,
+      tempC: null,
     }),
     [simSpeedMps, simDirDeg],
   );
@@ -583,24 +656,44 @@ export default function App() {
           ? historyWind
           : (() => {
               if (!forecastWind) return null;
-              if (!forecastPoint || !forecastWindField) return forecastWind;
-              const slice = sliceWindField(
-                forecastWindField,
-                forecastWind.time,
-                HRDPS_HANDOFF_MS,
-              );
-              if (!slice) return forecastWind;
-              const s = sampleWindField(
-                slice,
-                forecastPoint.lon,
-                forecastPoint.lat,
-              );
-              if (!s) return forecastWind;
-              return {
-                ...forecastWind,
-                windSpeedMps: s.speedMps,
-                windDirDeg: s.dirDeg,
-              };
+              let hour = forecastWind;
+              if (forecastPoint && forecastWindField) {
+                const slice = sliceWindField(
+                  forecastWindField,
+                  forecastWind.time,
+                  HRDPS_HANDOFF_MS,
+                );
+                if (slice) {
+                  const s = sampleWindField(
+                    slice,
+                    forecastPoint.lon,
+                    forecastPoint.lat,
+                  );
+                  if (s) {
+                    hour = {
+                      ...hour,
+                      windSpeedMps: s.speedMps,
+                      windDirDeg: s.dirDeg,
+                    };
+                  }
+                }
+              }
+              if (forecastPoint && forecastTempField) {
+                const tSlice = sliceTempField(
+                  forecastTempField,
+                  hour.time,
+                  HRDPS_HANDOFF_MS,
+                );
+                if (tSlice) {
+                  const tempC = sampleTempField(
+                    tSlice,
+                    forecastPoint.lon,
+                    forecastPoint.lat,
+                  );
+                  if (tempC != null) hour = { ...hour, tempC };
+                }
+              }
+              return hour;
             })();
 
   const neededWindRange = useMemo(() => {
@@ -686,6 +779,20 @@ export default function App() {
         : mode === "review" && rangeWindStatus !== "idle"
           ? rangeWindStatus
           : forecastWindStatus;
+
+  const tempSlice = useMemo(() => {
+    if (mode === "sim" || !wind || wind.time === "sim" || !forecastTempField) {
+      return null;
+    }
+    return sliceTempField(forecastTempField, wind.time, HRDPS_HANDOFF_MS);
+  }, [mode, wind, forecastTempField]);
+
+  const tempFieldStatus =
+    mode === "sim"
+      ? ("ready" as const)
+      : !needTempField && forecastTempStatus === "idle"
+        ? ("idle" as const)
+        : forecastTempStatus;
 
   const selectedHsM = useMemo(() => {
     if (mode === "review" && sessionSample) return sessionSample.hsM;
@@ -879,9 +986,9 @@ export default function App() {
             onClearPoint={() => setForecastPoint(null)}
             windSlice={windSlice}
             windFieldStatus={windFieldStatus}
-            onOverlayChange={(id) =>
-              setNeedWindField(id === "wind" || id === "waves")
-            }
+            tempSlice={tempSlice}
+            tempFieldStatus={tempFieldStatus}
+            onOverlayChange={onOverlayChange}
           />
         )}
         <WindSimPanel
@@ -945,8 +1052,27 @@ export default function App() {
         />
       </main>
 
-      <footer className="bottombar">
+      <footer className={`bottombar${bottomCollapsed ? " is-collapsed" : ""}`}>
         <div className="readout-row">
+          <button
+            type="button"
+            className="bottombar-fold"
+            aria-expanded={!bottomCollapsed}
+            aria-controls="bottom-charts"
+            title={bottomCollapsed ? "Show charts" : "Hide charts"}
+            onClick={() => {
+              setBottomCollapsed((prev) => {
+                const next = !prev;
+                saveBottomCollapsed(next);
+                return next;
+              });
+            }}
+          >
+            <span className="plot-fold-chevron" aria-hidden>
+              {bottomCollapsed ? "▸" : "▾"}
+            </span>
+            Charts
+          </button>
           <div className="readout">
             <strong>{spot?.identity.name ?? "—"}</strong>
             {mode === "sim" ? (
@@ -969,6 +1095,9 @@ export default function App() {
                   units.wind,
                 )}
               </span>
+            )}
+            {wind?.tempC != null && Number.isFinite(wind.tempC) && (
+              <span>{formatTemp(wind.tempC, units.temp)}</span>
             )}
             {wxHour && (
               <span
@@ -1041,8 +1170,8 @@ export default function App() {
             ))}
           </div>
         </div>
-        {reviewActive ? (
-          <div className="forecast-panel">
+        {!bottomCollapsed && (reviewActive ? (
+          <div id="bottom-charts" className="forecast-panel">
             <CollapsiblePlot id="review-wind" title="Wind">
               <SessionWindChart
                 samples={sessionSamples}
@@ -1101,7 +1230,7 @@ export default function App() {
           </div>
         ) : (
           showForecastCharts && (
-            <div className="forecast-panel">
+            <div id="bottom-charts" className="forecast-panel">
               <CollapsiblePlot id="forecast-wind" title="Wind">
                 <WindChart
                   hours={chartHours}
@@ -1119,6 +1248,16 @@ export default function App() {
                     grids={grids}
                     waveUnit={units.wave}
                     sampleAt={forecastPoint}
+                  />
+                </CollapsiblePlot>
+              )}
+              {hasTempHours(chartHours) && (
+                <CollapsiblePlot id="forecast-air" title="Temp">
+                  <TempChart
+                    hours={chartHours}
+                    hourIndex={chartIndex}
+                    onSelectHour={setChartIndex}
+                    tempUnit={units.temp}
                   />
                 </CollapsiblePlot>
               )}
@@ -1183,7 +1322,7 @@ export default function App() {
               </div>
             </div>
           )
-        )}
+        ))}
       </footer>
     </div>
   );

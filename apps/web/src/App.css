@@ -24,6 +24,29 @@
   gap: 0.45rem;
 }
 
+.bottombar.is-collapsed {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+.bottombar-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+  border: none;
+  background: transparent;
+  padding: 0.1rem 0.15rem 0.1rem 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bottombar-fold:hover {
+  color: var(--accent);
+}
+
 .brand {
   display: flex;
   flex-direction: column;
@@ -161,18 +184,94 @@
   left: 0.85rem;
   bottom: 0.85rem;
   z-index: 2;
-  width: 11rem;
+  width: 17.5rem;
   padding: 0.65rem 0.75rem;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: rgba(248, 246, 240, 0.52);
+  border: 1px solid rgba(28, 36, 32, 0.1);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(20, 40, 30, 0.08);
+  box-shadow: 0 8px 24px rgba(20, 40, 30, 0.06);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .legend-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
   font-size: 0.78rem;
   font-weight: 600;
   margin-bottom: 0.35rem;
+}
+
+.legend-info {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border: 1px solid rgba(28, 36, 32, 0.28);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--muted);
+  cursor: help;
+  line-height: 1;
+}
+
+.legend-info-mark {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-style: italic;
+  font-family: "Times New Roman", Times, serif;
+}
+
+.legend-info-tip {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.4rem);
+  width: 16.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(248, 246, 240, 0.94);
+  border: 1px solid rgba(28, 36, 32, 0.12);
+  box-shadow: 0 8px 20px rgba(20, 40, 30, 0.12);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: left;
+  z-index: 5;
+}
+
+.legend-info-tip span {
+  display: block;
+}
+
+.legend-info-tip span + span {
+  margin-top: 0.3rem;
+}
+
+.legend-info:hover,
+.legend-info:focus-visible {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.legend-info:hover .legend-info-tip,
+.legend-info:focus-visible .legend-info-tip {
+  display: grid;
+  gap: 0;
+}
+
+.legend-bar-hit {
+  position: relative;
+  padding: 0.15rem 0;
+  cursor: crosshair;
+  touch-action: none;
 }
 
 .legend-bar {
@@ -188,26 +287,86 @@
   );
 }
 
+.legend-bar-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ink);
+  border-radius: 1px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(248, 246, 240, 0.7);
+}
+
+.legend-bar-readout {
+  position: absolute;
+  bottom: calc(100% + 0.12rem);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transform: translateX(-50%);
+  padding: 0.12rem 0.35rem;
+  border-radius: 6px;
+  background: rgba(248, 246, 240, 0.94);
+  border: 1px solid rgba(28, 36, 32, 0.12);
+  box-shadow: 0 4px 12px rgba(20, 40, 30, 0.1);
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.legend-bar-swatch {
+  display: block;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 3px;
+  border: 1px solid rgba(28, 36, 32, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  flex: none;
+}
+
+.legend-bar-readout.is-start {
+  transform: translateX(0);
+}
+
+.legend-bar-readout.is-end {
+  transform: translateX(-100%);
+}
+
 .legend-scale {
   display: flex;
   justify-content: space-between;
-  font-size: 0.72rem;
-  color: var(--muted);
-  margin-top: 0.25rem;
-}
-
-.legend-note {
-  margin: 0.45rem 0 0;
   font-size: 0.68rem;
   color: var(--muted);
+  margin-top: 0.25rem;
+  font-variant-numeric: tabular-nums;
+  gap: 0.12rem;
+}
+
+.legend-scale span {
+  flex: 1;
+  text-align: center;
+}
+
+.legend-scale span:first-child {
+  text-align: left;
+}
+
+.legend-scale span:last-child {
+  text-align: right;
 }
 
 .legend-pin-btn {
   display: block;
   width: 100%;
   margin-top: 0.45rem;
-  border: 1px solid var(--line);
-  background: #fff;
+  border: 1px solid rgba(28, 36, 32, 0.12);
+  background: rgba(255, 255, 255, 0.45);
   border-radius: 6px;
   padding: 0.25rem 0.4rem;
   font-size: 0.68rem;
@@ -236,6 +395,9 @@
 }
 
 .hover-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   font-weight: 600;
   font-size: 0.86rem;
 }
@@ -398,7 +560,7 @@
   width: 100%;
   border: none;
   background: transparent;
-  padding: 0.12rem 0;
+  padding: 0;
   color: var(--muted);
   cursor: pointer;
   text-align: left;
@@ -440,10 +602,10 @@
   display: grid;
   grid-template-columns: 12px 2.85rem 2.4rem;
   column-gap: 0.28rem;
-  align-items: center;
+  align-items: stretch;
   min-width: 0;
   min-height: 0;
-  padding: 0;
+  padding: 0.15rem 0;
 }
 
 .forecast-plot-title {
@@ -452,6 +614,7 @@
   color: var(--ink);
   line-height: 1;
   justify-self: start;
+  align-self: center;
 }
 
 .forecast-plot-unit {
@@ -460,10 +623,18 @@
   color: var(--muted);
   line-height: 1;
   justify-self: start;
+  align-self: center;
 }
 
 .wind-chart {
   width: 100%;
+}
+
+/* Wind SVG is taller for direction arrows; keep the ramp on the speed plot. */
+.wind-chart .forecast-plot-rail,
+.session-wind-chart .forecast-plot-rail {
+  height: calc(100% * 78 / 92);
+  align-self: start;
 }
 
 
@@ -618,8 +789,9 @@
 
 .color-scale-legend.vertical .color-scale-bar {
   width: 12px;
-  height: 7.25rem;
-  flex: none;
+  height: auto;
+  min-height: 0;
+  align-self: stretch;
 }
 
 .color-scale-labels {
@@ -634,7 +806,9 @@
 .color-scale-legend.vertical .color-scale-labels {
   flex-direction: column;
   align-items: flex-start;
-  height: 7.25rem;
+  justify-content: space-between;
+  height: auto;
+  min-height: 0;
   min-width: 0;
   font-size: 0.78rem;
 }
@@ -810,7 +984,15 @@
   top: 3.05rem;
 }
 
+.heatmap-style-toggle {
+  top: 5.35rem;
+}
+
 .wind-glyph-toggle {
+  top: 7.65rem;
+}
+
+.wind-glyph-toggle.is-up {
   top: 5.35rem;
 }
 
@@ -830,6 +1012,50 @@
 
 .wind-particles.is-on {
   display: block;
+}
+
+.lake-outlines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.map-heatmap-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.85rem;
+  background: rgba(248, 246, 240, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(20, 40, 30, 0.08);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+.map-heatmap-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid rgba(28, 36, 32, 0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: map-heatmap-spin 0.7s linear infinite;
+}
+
+@keyframes map-heatmap-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sim-panel {

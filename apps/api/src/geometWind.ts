@@ -12,7 +12,7 @@ import {
   STEP_LAT,
   STEP_LON,
 } from "./windGrid.ts";
-import type { WindFieldJson } from "./wind.ts";
+import type { TempFieldJson, WindFieldJson } from "./wind.ts";
 
 const GEOMET = "https://geo.weather.gc.ca/geomet";
 const CONCURRENCY = 4;
@@ -199,7 +199,12 @@ async function readRaster(buf: ArrayBuffer): Promise<Raster> {
   };
 }
 
-function sampleRaster(raster: Raster, lon: number, lat: number): number {
+function sampleRaster(
+  raster: Raster,
+  lon: number,
+  lat: number,
+  valid: (v: number) => boolean,
+): number {
   const { west, south, east, north, width, height, values } = raster;
   if (east === west || north === south) return Number.NaN;
   const fx = ((lon - west) / (east - west)) * width - 0.5;
@@ -211,7 +216,7 @@ function sampleRaster(raster: Raster, lon: number, lat: number): number {
   const at = (i: number, j: number): number => {
     if (i < 0 || j < 0 || i >= width || j >= height) return Number.NaN;
     const v = values[j * width + i]!;
-    return Number.isFinite(v) && v > -50 && v < 400 ? v : Number.NaN;
+    return Number.isFinite(v) && valid(v) ? v : Number.NaN;
   };
   const a = at(i0, j0);
   const b = at(i0 + 1, j0);
@@ -229,6 +234,14 @@ function sampleRaster(raster: Raster, lon: number, lat: number): number {
     vsum += p.v * p.w;
   }
   return wsum > 0 ? vsum / wsum : Number.NaN;
+}
+
+function isWindSample(v: number): boolean {
+  return v > -50 && v < 400;
+}
+
+function isTempC(v: number): boolean {
+  return v > -80 && v < 60;
 }
 
 async function fetchHourRasters(
@@ -260,8 +273,8 @@ function writeHour(
     for (let i = 0; i < NCOLS; i++) {
       const lon = cellLon(i);
       const lat = cellLat(j);
-      const s = sampleRaster(rasters.speed, lon, lat);
-      const d = sampleRaster(rasters.dir, lon, lat);
+      const s = sampleRaster(rasters.speed, lon, lat, isWindSample);
+      const d = sampleRaster(rasters.dir, lon, lat, isWindSample);
       if (!Number.isFinite(s) || !Number.isFinite(d) || s < 0) continue;
       const idx = t * ncells + j * NCOLS + i;
       speed[idx] = s;
@@ -338,6 +351,93 @@ export async function fetchGeometForecastField(): Promise<WindFieldJson> {
     times,
     speed,
     dir,
+    fetchedAt: new Date().toISOString(),
+    source: "geomet-gem",
+    kind: "forecast",
+  };
+}
+
+type TempModel = { name: "hrdps" | "rdps" | "gdps"; id: string };
+
+const TEMP_MODELS: TempModel[] = [
+  { name: "hrdps", id: "HRDPS.CONTINENTAL_TT" },
+  { name: "rdps", id: "RDPS_10km_AirTemp_2m" },
+  { name: "gdps", id: "GDPS_15km_AirTemp_2m" },
+];
+
+function writeTempHour(
+  temp: Array<number | null>,
+  raster: Raster,
+): void {
+  for (let j = 0; j < NROWS; j++) {
+    for (let i = 0; i < NCOLS; i++) {
+      const lon = cellLon(i);
+      const lat = cellLat(j);
+      const v = sampleRaster(raster, lon, lat, isTempC);
+      if (!Number.isFinite(v)) continue;
+      temp[j * NCOLS + i] = v;
+    }
+  }
+}
+
+export async function fetchGeometTempField(): Promise<TempFieldJson> {
+  const ncells = NCOLS * NROWS;
+  const byHour = new Map<
+    string,
+    { utc: string; temp: Array<number | null> }
+  >();
+
+  for (const model of TEMP_MODELS) {
+    const utcTimes = await modelTimeRange(model.id);
+    const need = utcTimes.filter((utc) => !byHour.has(toEdmontonHour(utc)));
+    if (need.length === 0) continue;
+    console.log(
+      `temp field GeoMet ${model.name} ${need.length} new hours (${utcTimes.length} available)`,
+    );
+    await mapPool(
+      need.map((utc, i) => ({ utc, i })),
+      CONCURRENCY,
+      async ({ utc, i }) => {
+        const raster = await readRaster(await fetchBuffer(coverageUrl(model.id, utc)));
+        const hourTemp: Array<number | null> = Array.from(
+          { length: ncells },
+          () => null,
+        );
+        writeTempHour(hourTemp, raster);
+        const key = toEdmontonHour(utc);
+        byHour.set(key, { utc, temp: hourTemp });
+        console.log(
+          `temp field GeoMet ${model.name} ${i + 1}/${need.length} ${utc}`,
+        );
+      },
+    );
+  }
+
+  const ordered = [...byHour.entries()].sort(
+    (a, b) => Date.parse(a[1].utc) - Date.parse(b[1].utc),
+  );
+  if (ordered.length === 0) throw new Error("GeoMet temp field empty");
+  const times = ordered.map(([key]) => key);
+  const temp: Array<number | null> = Array.from(
+    { length: times.length * ncells },
+    () => null,
+  );
+  for (let t = 0; t < ordered.length; t++) {
+    const hour = ordered[t]![1];
+    const off = t * ncells;
+    for (let k = 0; k < ncells; k++) {
+      temp[off + k] = hour.temp[k]!;
+    }
+  }
+  console.log(`temp field GeoMet merged ${times.length} hours ${NCOLS}×${NROWS}`);
+  return {
+    ...fieldExtent(),
+    dlon: STEP_LON,
+    dlat: STEP_LAT,
+    ncols: NCOLS,
+    nrows: NROWS,
+    times,
+    temp,
     fetchedAt: new Date().toISOString(),
     source: "geomet-gem",
     kind: "forecast",

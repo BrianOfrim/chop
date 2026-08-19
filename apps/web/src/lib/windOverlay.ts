@@ -1,5 +1,7 @@
 import albertaMask from "../data/albertaMask.json";
-import { DEFAULT_WIND_SCALE } from "./colorScales";
+import { DEFAULT_TEMP_SCALE, DEFAULT_WIND_SCALE } from "./colorScales";
+import { sampleTempField, type TempFieldSlice } from "./tempField";
+import { tempColor, TEMP_COLOR_MAX_C, TEMP_COLOR_MIN_C } from "./tempScale";
 import { windColor, WIND_COLOR_MAX_MPS } from "./windScale";
 import {
   WIND_FIELD_STEP_M,
@@ -15,6 +17,16 @@ const ALBERTA_OUTLINE = (albertaMask as GeoJSON.FeatureCollection).features.find
   (f) => f.properties?.kind === "outline",
 );
 
+/** Spherical Web Mercator Y — MapLibre stretches the canvas quad this way. */
+function mercatorY(latDeg: number): number {
+  const lat = Math.max(-85.051129, Math.min(85.051129, latDeg)) * Math.PI / 180;
+  return Math.log(Math.tan(Math.PI / 4 + lat / 2));
+}
+
+function latFromMercatorY(y: number): number {
+  return ((2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180) / Math.PI;
+}
+
 function lonLatToPx(
   lon: number,
   lat: number,
@@ -26,8 +38,29 @@ function lonLatToPx(
   height: number,
 ): [number, number] {
   const x = ((lon - west) / (east - west)) * width;
-  const y = ((north - lat) / (north - south)) * height;
+  const y =
+    ((mercatorY(north) - mercatorY(lat)) /
+      (mercatorY(north) - mercatorY(south))) *
+    height;
   return [x, y];
+}
+
+function canvasPxToLonLat(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+): { lon: number; lat: number } {
+  const lon = west + (x / width) * (east - west);
+  const v = y / height;
+  const lat = latFromMercatorY(
+    mercatorY(north) + v * (mercatorY(south) - mercatorY(north)),
+  );
+  return { lon, lat };
 }
 
 function addRing(
@@ -93,7 +126,10 @@ export function windCanvasCoordinates(): [
   ];
 }
 
+let albertaMaskCanvas: HTMLCanvasElement | null = null;
+
 export function buildAlbertaWindMask(): HTMLCanvasElement {
+  if (albertaMaskCanvas) return albertaMaskCanvas;
   const { width, height } = windCanvasSize();
   const { west, south, east, north } = windFieldExtent();
   const canvas = document.createElement("canvas");
@@ -116,6 +152,7 @@ export function buildAlbertaWindMask(): HTMLCanvasElement {
     }
   }
   ctx.fill("evenodd");
+  albertaMaskCanvas = canvas;
   return canvas;
 }
 
@@ -132,26 +169,6 @@ function sampleCell(
   return { s, d };
 }
 
-function bilinearSpeed(slice: WindFieldSlice, fx: number, fy: number): number {
-  const i0 = Math.min(slice.ncols - 1, Math.max(0, Math.floor(fx)));
-  const j0 = Math.min(slice.nrows - 1, Math.max(0, Math.floor(fy)));
-  const i1 = Math.min(slice.ncols - 1, i0 + 1);
-  const j1 = Math.min(slice.nrows - 1, j0 + 1);
-  const a = sampleCell(slice, i0, j0);
-  const b = sampleCell(slice, i1, j0);
-  const c = sampleCell(slice, i0, j1);
-  const d = sampleCell(slice, i1, j1);
-  if (!a || !b || !c || !d) return a?.s ?? b?.s ?? c?.s ?? d?.s ?? Number.NaN;
-  const tx = fx - Math.floor(fx);
-  const ty = fy - Math.floor(fy);
-  return (
-    a.s * (1 - tx) * (1 - ty) +
-    b.s * tx * (1 - ty) +
-    c.s * (1 - tx) * ty +
-    d.s * tx * ty
-  );
-}
-
 function maskHasFill(mask: HTMLCanvasElement): boolean {
   const c = mask.getContext("2d");
   if (!c) return false;
@@ -166,6 +183,7 @@ export function paintWindField(
   ctx: CanvasRenderingContext2D,
   slice: WindFieldSlice,
   mask: HTMLCanvasElement,
+  mode: "blend" | "edges" = "blend",
 ): void {
   const canvas = ctx.canvas;
   const width = mask.width;
@@ -176,17 +194,86 @@ export function paintWindField(
   }
   const img = ctx.createImageData(width, height);
   const px = img.data;
+  const { west, south, east, north } = slice;
   for (let y = 0; y < height; y++) {
-    const fy = ((y + 0.5) / height) * slice.nrows - 0.5;
+    const lat = canvasPxToLonLat(
+      0.5,
+      y + 0.5,
+      width,
+      height,
+      west,
+      south,
+      east,
+      north,
+    ).lat;
     for (let x = 0; x < width; x++) {
-      const fx = ((x + 0.5) / width) * slice.ncols - 0.5;
-      const s = bilinearSpeed(slice, fx, fy);
+      const lon = west + ((x + 0.5) / width) * (east - west);
+      const sampled = sampleWindField(slice, lon, lat, mode);
+      const s = sampled?.speedMps ?? Number.NaN;
       const o = (y * width + x) * 4;
       if (!Number.isFinite(s) || s < 0) {
         px[o + 3] = 0;
         continue;
       }
       const [r, g, b, a] = windColor(s, WIND_COLOR_MAX_MPS, DEFAULT_WIND_SCALE);
+      px[o] = r;
+      px[o + 1] = g;
+      px[o + 2] = b;
+      px[o + 3] = a;
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.clearRect(0, 0, width, height);
+  ctx.putImageData(img, 0, 0);
+  if (maskHasFill(mask)) {
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.drawImage(mask, 0, 0, width, height);
+    ctx.globalCompositeOperation = "source-over";
+  }
+}
+
+export function paintTempField(
+  ctx: CanvasRenderingContext2D,
+  slice: TempFieldSlice,
+  mask: HTMLCanvasElement,
+  mode: "blend" | "edges" = "blend",
+): void {
+  const canvas = ctx.canvas;
+  const width = mask.width;
+  const height = mask.height;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const img = ctx.createImageData(width, height);
+  const px = img.data;
+  const { west, south, east, north } = slice;
+  for (let y = 0; y < height; y++) {
+    const lat = canvasPxToLonLat(
+      0.5,
+      y + 0.5,
+      width,
+      height,
+      west,
+      south,
+      east,
+      north,
+    ).lat;
+    for (let x = 0; x < width; x++) {
+      const lon = west + ((x + 0.5) / width) * (east - west);
+      const t = sampleTempField(slice, lon, lat, mode) ?? Number.NaN;
+      const o = (y * width + x) * 4;
+      if (!Number.isFinite(t)) {
+        px[o + 3] = 0;
+        continue;
+      }
+      const [r, g, b, a] = tempColor(
+        t,
+        TEMP_COLOR_MIN_C,
+        TEMP_COLOR_MAX_C,
+        DEFAULT_TEMP_SCALE,
+      );
       px[o] = r;
       px[o + 1] = g;
       px[o + 2] = b;

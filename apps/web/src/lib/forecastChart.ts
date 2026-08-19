@@ -53,6 +53,9 @@ export function hourStep(n: number): number {
   return 12;
 }
 
+/** Centers closer than this (chart units) overlap at 8px hour-label size. */
+const MIN_HOUR_LABEL_DX = 42;
+
 export function formatHourLabel(d: Date): string {
   return d
     .toLocaleTimeString(undefined, { hour: "numeric" })
@@ -98,8 +101,13 @@ export function buildHourLabels(
   const labels: Array<{ x: number; text: string }> = [];
   times.forEach((time, i) => {
     const d = new Date(time);
-    if (i !== 0 && d.getHours() % step !== 0) return;
+    if (d.getHours() % step !== 0) return;
     labels.push({ x: xAt(i), text: formatHourLabel(d) });
   });
-  return labels;
+  if (times.length === 0) return labels;
+  const first = new Date(times[0]!);
+  if (first.getHours() % step === 0) return labels;
+  const extra = { x: xAt(0), text: formatHourLabel(first) };
+  if (labels[0] && labels[0].x - extra.x < MIN_HOUR_LABEL_DX) return labels;
+  return [extra, ...labels];
 }

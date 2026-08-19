@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { repoRoot, WIND_CACHE_DIR } from "./env.ts";
-import { fetchGeometForecastField } from "./geometWind.ts";
+import { fetchGeometForecastField, fetchGeometTempField } from "./geometWind.ts";
 import {
   NCOLS,
   NORTH,
@@ -62,6 +62,23 @@ export type WindHourJson = {
   gustMps: number | null;
   weatherCode: number | null;
   precipMm: number;
+  tempC: number | null;
+};
+
+export type TempFieldJson = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  dlon: number;
+  dlat: number;
+  ncols: number;
+  nrows: number;
+  times: string[];
+  temp: Array<number | null>;
+  fetchedAt: string;
+  source: "geomet-gem";
+  kind: "forecast";
 };
 
 export type WindForecastJson = {
@@ -355,6 +372,7 @@ type PointHourly = {
   wind_gusts_10m?: Array<number | null>;
   weather_code?: Array<number | null>;
   precipitation?: Array<number | null>;
+  temperature_2m?: Array<number | null>;
 };
 
 function parsePointHours(hourly?: PointHourly): WindHourJson[] {
@@ -364,11 +382,13 @@ function parsePointHours(hourly?: PointHourly): WindHourJson[] {
   const gust = hourly?.wind_gusts_10m ?? [];
   const code = hourly?.weather_code ?? [];
   const precip = hourly?.precipitation ?? [];
+  const temp = hourly?.temperature_2m ?? [];
   const hours: WindHourJson[] = [];
   for (let i = 0; i < t.length; i++) {
     const windSpeedMps = spd[i];
     const windDirDeg = dir[i];
     if (windSpeedMps == null || windDirDeg == null) continue;
+    const tempC = temp[i];
     hours.push({
       time: t[i]!,
       windSpeedMps,
@@ -376,6 +396,7 @@ function parsePointHours(hourly?: PointHourly): WindHourJson[] {
       gustMps: gust[i] ?? null,
       weatherCode: code[i] ?? null,
       precipMm: precip[i] ?? 0,
+      tempC: tempC != null && Number.isFinite(tempC) ? tempC : null,
     });
   }
   return hours;
@@ -393,7 +414,7 @@ async function fetchOpenMeteoPoint(
   url.searchParams.set("longitude", String(lon));
   url.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,precipitation",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,precipitation,temperature_2m",
   );
   url.searchParams.set("wind_speed_unit", "ms");
   url.searchParams.set("timezone", "auto");
@@ -508,6 +529,18 @@ export async function getForecastField(): Promise<{
     file: `field-forecast-${FIELD_CACHE_PREFIX}.json`,
     ttlMs: FORECAST_TTL_MS,
     load: () => fetchGeometForecastField(),
+  });
+}
+
+export async function getForecastTempField(): Promise<{
+  data: TempFieldJson;
+  cache: CacheStatus;
+}> {
+  return cached({
+    key: `field-forecast-${FIELD_CACHE_PREFIX}-temp`,
+    file: `field-forecast-${FIELD_CACHE_PREFIX}-temp.json`,
+    ttlMs: FORECAST_TTL_MS,
+    load: () => fetchGeometTempField(),
   });
 }
 
@@ -629,6 +662,74 @@ async function overlayHrdpsIfCached(
   });
 }
 
+function sampleCachedTemp(
+  field: TempFieldJson,
+  timeIso: string,
+  lat: number,
+  lon: number,
+): number | null {
+  const t = nearestFieldTimeIndex(field.times, timeIso);
+  if (t < 0) return null;
+  const target = Date.parse(timeIso);
+  const got = Date.parse(field.times[t]!);
+  if (
+    Number.isFinite(target) &&
+    Number.isFinite(got) &&
+    Math.abs(got - target) > HRDPS_HANDOFF_MS
+  ) {
+    return null;
+  }
+  const { ncols, nrows, west, south, east, north } = field;
+  if (east === west || north === south) return null;
+  if (lon < west || lon > east || lat < south || lat > north) return null;
+  const n = ncols * nrows;
+  const fx = ((lon - west) / (east - west)) * ncols - 0.5;
+  const fy = ((north - lat) / (north - south)) * nrows - 0.5;
+  const i0 = Math.floor(fx);
+  const j0 = Math.floor(fy);
+  const tx = fx - i0;
+  const ty = fy - j0;
+  const at = (i: number, j: number): number | null => {
+    if (i < 0 || j < 0 || i >= ncols || j >= nrows) return null;
+    const v = field.temp[t * n + j * ncols + i];
+    return v != null && Number.isFinite(v) ? v : null;
+  };
+  const a = at(i0, j0);
+  const b = at(i0 + 1, j0);
+  const c = at(i0, j0 + 1);
+  const d = at(i0 + 1, j0 + 1);
+  const parts: Array<{ v: number; w: number }> = [];
+  if (a != null) parts.push({ v: a, w: (1 - tx) * (1 - ty) });
+  if (b != null) parts.push({ v: b, w: tx * (1 - ty) });
+  if (c != null) parts.push({ v: c, w: (1 - tx) * ty });
+  if (d != null) parts.push({ v: d, w: tx * ty });
+  let wsum = 0;
+  let s = 0;
+  for (const p of parts) {
+    if (p.w <= 0) continue;
+    wsum += p.w;
+    s += p.v * p.w;
+  }
+  if (wsum <= 0) return a;
+  return s / wsum;
+}
+
+async function overlayTempIfCached(
+  hours: WindHourJson[],
+  lat: number,
+  lon: number,
+): Promise<WindHourJson[]> {
+  const hit = await readCache<TempFieldJson>(
+    `field-forecast-${FIELD_CACHE_PREFIX}-temp.json`,
+  );
+  if (!hit || hours.length === 0) return hours;
+  return hours.map((h) => {
+    const tempC = sampleCachedTemp(hit, h.time, lat, lon);
+    if (tempC == null) return h;
+    return { ...h, tempC };
+  });
+}
+
 export async function getPointForecast(
   lat: number,
   lon: number,
@@ -643,7 +744,11 @@ export async function getPointForecast(
   void getForecastField().catch((err) =>
     console.warn("wind field warmup", err),
   );
-  const hours = await overlayHrdpsIfCached(result.data.hours, lat, lon);
+  const hours = await overlayTempIfCached(
+    await overlayHrdpsIfCached(result.data.hours, lat, lon),
+    lat,
+    lon,
+  );
   return {
     data: {
       ...result.data,
