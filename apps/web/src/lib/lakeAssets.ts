@@ -1,4 +1,4 @@
-import type { GridMeta, LakeGrids } from "@chop/wave-engine";
+import type { FetchDirStats, GridMeta, LakeGrids } from "@chop/wave-engine";
 
 export type SpotProfile = {
   spotId: string;
@@ -30,6 +30,65 @@ export type LakeIndexEntry = {
   enabled: boolean;
   path: string;
 };
+
+export function proxyLatLon(spot: SpotProfile): { lat: number; lon: number } {
+  const proxy =
+    spot.proxyPoints.find(
+      (p) =>
+        p.role === "background_model_point" ||
+        p.role === "open_water_model_point",
+    ) ?? spot.proxyPoints[0];
+  return {
+    lat: proxy?.latitude ?? spot.identity.latitude,
+    lon: proxy?.longitude ?? spot.identity.longitude,
+  };
+}
+
+type GridJson = GridMeta & {
+  stats?: {
+    fetchMaxByDirM?: number[];
+    depthAtFetchMaxByDirM?: number[];
+  };
+};
+
+export function waveStatsFromGrid(grid: GridJson): FetchDirStats | null {
+  const fetchMax = grid.stats?.fetchMaxByDirM;
+  const depths = grid.stats?.depthAtFetchMaxByDirM;
+  const dirs = grid.directionsDeg;
+  if (
+    !Array.isArray(fetchMax) ||
+    !Array.isArray(depths) ||
+    !Array.isArray(dirs) ||
+    fetchMax.length !== dirs.length ||
+    depths.length !== dirs.length
+  ) {
+    return null;
+  }
+  return {
+    directionsDeg: dirs,
+    fetchMaxByDirM: fetchMax.map(Number),
+    depthAtFetchMaxByDirM: depths.map(Number),
+  };
+}
+
+export async function loadLakeCompareAssets(basePath: string): Promise<{
+  spot: SpotProfile;
+  waveStats: FetchDirStats | null;
+}> {
+  const [spotRes, gridRes] = await Promise.all([
+    globalThis.fetch(`${basePath}/spot-profile.json`),
+    globalThis.fetch(`${basePath}/grid.json`),
+  ]);
+  if (!spotRes.ok) {
+    throw new Error(`Failed to load spot profile from ${basePath}`);
+  }
+  const spot = (await spotRes.json()) as SpotProfile;
+  if (!gridRes.ok) {
+    return { spot, waveStats: null };
+  }
+  const grid = (await gridRes.json()) as GridJson;
+  return { spot, waveStats: waveStatsFromGrid(grid) };
+}
 
 export async function loadLakeIndex(): Promise<LakeIndexEntry[]> {
   const res = await globalThis.fetch("/lakes/index.json");

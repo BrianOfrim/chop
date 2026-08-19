@@ -19,6 +19,7 @@ import {
   summarizeActivity,
   type StravaActivitySummary,
 } from "./track.ts";
+import { getAdvisories } from "./advisories.ts";
 import {
   getForecastField,
   getForecastTempField,
@@ -52,6 +53,20 @@ app.use(
 );
 
 app.get("/api/health", (c) => c.json({ ok: true }));
+
+app.get("/api/advisories", async (c) => {
+  try {
+    const { data, cache } = await getAdvisories();
+    c.header("X-Advisories-Cache", cache);
+    return c.json(data);
+  } catch (e) {
+    console.error(e);
+    return c.json(
+      { error: e instanceof Error ? e.message : "Advisories unavailable" },
+      502,
+    );
+  }
+});
 
 app.get("/api/wind/field", async (c) => {
   const start = c.req.query("start");

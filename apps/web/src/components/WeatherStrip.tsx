@@ -52,7 +52,7 @@ function MoonGlyph({ fill = MOON_FILL }: { fill?: string }) {
   );
 }
 
-function WxGlyph({
+export function WxGlyph({
   kind,
   thunder,
   night,

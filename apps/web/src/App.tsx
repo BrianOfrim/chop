@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Topbar } from "./components/Topbar";
 import { MapView, type OverlayId } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
 import { TempChart, hasTempHours } from "./components/TempChart";
@@ -44,17 +45,11 @@ import {
 } from "./lib/lswt";
 import {
   DEFAULT_UNITS,
-  TEMP_UNIT_OPTIONS,
-  WAVE_UNIT_OPTIONS,
-  WIND_UNIT_OPTIONS,
   formatTemp,
   formatWaveHeight,
   loadUnitPrefs,
   saveUnitPrefs,
-  type TempUnit,
   type UnitPrefs,
-  type WaveHeightUnit,
-  type WindSpeedUnit,
 } from "./lib/units";
 import {
   computeHsGrid,
@@ -95,10 +90,50 @@ import {
   sliceHistoryView,
   type WindMode,
 } from "./lib/historyRange";
+import { loadLakeId, saveLakeId } from "./lib/selectedLake";
+import {
+  fetchAdvisories,
+  lakeAdvisory,
+  type AdvisoriesResponse,
+} from "./lib/advisories";
+import { LakeInfoPanel } from "./components/LakeInfoPanel";
 import "./App.css";
 
 const REVIEW_FOLLOW_KEY = "chop.reviewFollow";
 const BOTTOM_PANEL_KEY = "chop.bottomPanelCollapsed";
+const FORECAST_PINS_KEY = "chop.forecastPins";
+
+type ForecastPins = Record<string, ForecastPoint>;
+
+function isForecastPoint(value: unknown): value is ForecastPoint {
+  if (!value || typeof value !== "object") return false;
+  const pt = value as ForecastPoint;
+  return Number.isFinite(pt.lon) && Number.isFinite(pt.lat);
+}
+
+function loadForecastPins(): ForecastPins {
+  try {
+    const raw = localStorage.getItem(FORECAST_PINS_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: ForecastPins = {};
+    for (const [id, pt] of Object.entries(parsed as Record<string, unknown>)) {
+      if (id && isForecastPoint(pt)) out[id] = { lon: pt.lon, lat: pt.lat };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveForecastPins(pins: ForecastPins): void {
+  try {
+    localStorage.setItem(FORECAST_PINS_KEY, JSON.stringify(pins));
+  } catch {
+    /* ignore */
+  }
+}
 
 function loadReviewFollow(): boolean {
   try {
@@ -134,7 +169,7 @@ function saveBottomCollapsed(on: boolean): void {
 
 export default function App() {
   const [lakes, setLakes] = useState<LakeIndexEntry[]>([]);
-  const [lakeId, setLakeId] = useState("ca-ab-pigeon-lake");
+  const [lakeId, setLakeId] = useState(loadLakeId);
   const [grids, setGrids] = useState<LakeGrids | null>(null);
   const [spot, setSpot] = useState<SpotProfile | null>(null);
   const [shoreline, setShoreline] = useState<GeoJSON.FeatureCollection | null>(
@@ -149,8 +184,16 @@ export default function App() {
   const [waterTempStatus, setWaterTempStatus] = useState<
     "idle" | "loading" | "ready" | "unavailable"
   >("idle");
+  const [advisories, setAdvisories] = useState<AdvisoriesResponse | null>(null);
+  const [advisoriesStatus, setAdvisoriesStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [lakeInfoOpen, setLakeInfoOpen] = useState(false);
   const [hourIndex, setHourIndex] = useState(0);
-  const [forecastPoint, setForecastPoint] = useState<ForecastPoint | null>(null);
+  const [forecastPins, setForecastPins] = useState<ForecastPins>(() =>
+    typeof window !== "undefined" ? loadForecastPins() : {},
+  );
+  const forecastPoint = forecastPins[lakeId] ?? null;
   const [mode, setMode] = useState<WindMode>("forecast");
   const [simSpeedMps, setSimSpeedMps] = useState(8);
   const [simDirDeg, setSimDirDeg] = useState(270);
@@ -229,6 +272,41 @@ export default function App() {
       .then((list) => setLakes(list.filter((l) => l.enabled)))
       .catch((e) => setError(String(e)));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAdvisoriesStatus("loading");
+    fetchAdvisories()
+      .then((data) => {
+        if (cancelled) return;
+        setAdvisories(data);
+        setAdvisoriesStatus("ready");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("AHS advisories failed", e);
+        setAdvisories(null);
+        setAdvisoriesStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setLakeInfoOpen(false);
+  }, [lakeId]);
+
+  useEffect(() => {
+    saveLakeId(lakeId);
+  }, [lakeId]);
+
+  useEffect(() => {
+    if (lakes.length === 0) return;
+    if (!lakes.some((l) => l.id === lakeId)) {
+      setLakeId(lakes[0]!.id);
+    }
+  }, [lakes, lakeId]);
 
   const windFetchBlocked = forecastWindStatus === "error";
   useEffect(() => {
@@ -311,7 +389,6 @@ export default function App() {
     setForecast(null);
     setWaterTemp(null);
     setWaterTempStatus("idle");
-    setForecastPoint(null);
     const keepSession = pendingSessionRef.current != null;
     if (!keepSession) {
       setGpxTrack(null);
@@ -868,75 +945,28 @@ export default function App() {
     ];
   }, [mode, sessionSample]);
 
+  const advisoryLakeIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!advisories || advisories.status !== "ok") return ids;
+    for (const [id, row] of Object.entries(advisories.lakes)) {
+      if (row.advisory) ids.add(id);
+    }
+    return ids;
+  }, [advisories]);
+  const selectedAdvisory = lakeAdvisory(advisories, lakeId);
+  const closeLakeInfo = useCallback(() => setLakeInfoOpen(false), []);
+
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">chop</span>
-          <span className="brand-sub">inland lake waves</span>
-        </div>
-        <label className="lake-picker">
-          Lake
-          <select
-            value={lakeId}
-            onChange={(e) => setLakeId(e.target.value)}
-            disabled={lakes.length === 0}
-          >
-            {lakes.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="unit-prefs" title="Display units">
-          <label className="unit-picker">
-            Wind
-            <select
-              value={units.wind}
-              onChange={(e) =>
-                updateUnits({ wind: e.target.value as WindSpeedUnit })
-              }
-            >
-              {WIND_UNIT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="unit-picker">
-            Waves
-            <select
-              value={units.wave}
-              onChange={(e) =>
-                updateUnits({ wave: e.target.value as WaveHeightUnit })
-              }
-            >
-              {WAVE_UNIT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="unit-picker">
-            Temp
-            <select
-              value={units.temp}
-              onChange={(e) =>
-                updateUnits({ temp: e.target.value as TempUnit })
-              }
-            >
-              {TEMP_UNIT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </header>
+      <Topbar
+        view="map"
+        units={units}
+        onUnits={updateUnits}
+        lakeId={lakeId}
+        lakes={lakes}
+        onLakeId={setLakeId}
+        advisoryLakeIds={advisoryLakeIds}
+      />
 
       <main className="main">
         {error && <div className="banner error">{error}</div>}
@@ -965,6 +995,7 @@ export default function App() {
             simulating={mode === "sim"}
             historic={mode === "history"}
             forecastPoint={forecastPoint}
+            forecastPins={forecastPins}
             gpxTrack={mode === "review" ? gpxTrack : null}
             gpxCursor={
               mode === "review" && sessionSample
@@ -982,8 +1013,22 @@ export default function App() {
               setReviewFollow(on);
               saveReviewFollow(on);
             }}
-            onChoosePoint={setForecastPoint}
-            onClearPoint={() => setForecastPoint(null)}
+            onChoosePoint={(point) => {
+              setForecastPins((prev) => {
+                const next = { ...prev, [lakeId]: point };
+                saveForecastPins(next);
+                return next;
+              });
+            }}
+            onClearPoint={() => {
+              setForecastPins((prev) => {
+                if (!(lakeId in prev)) return prev;
+                const next = { ...prev };
+                delete next[lakeId];
+                saveForecastPins(next);
+                return next;
+              });
+            }}
             windSlice={windSlice}
             windFieldStatus={windFieldStatus}
             tempSlice={tempSlice}
@@ -1074,7 +1119,35 @@ export default function App() {
             Charts
           </button>
           <div className="readout">
-            <strong>{spot?.identity.name ?? "—"}</strong>
+            <div className="lake-info">
+              <button
+                type="button"
+                className="lake-name-btn"
+                aria-expanded={lakeInfoOpen}
+                aria-haspopup="dialog"
+                aria-controls="lake-info-panel"
+                title="Lake conditions"
+                onClick={() => setLakeInfoOpen((open) => !open)}
+              >
+                {spot?.identity.name ?? "—"}
+              </button>
+              {selectedAdvisory?.advisory && (
+                <span className="advisory-badge">Algae advisory</span>
+              )}
+              {(advisoriesStatus === "error" ||
+                advisories?.status === "unavailable") && (
+                <span className="advisory-unknown">Check AHS</span>
+              )}
+              <LakeInfoPanel
+                open={lakeInfoOpen}
+                onClose={closeLakeInfo}
+                lakeName={spot?.identity.name ?? "—"}
+                summary={spot?.identity.summary}
+                feed={advisories}
+                feedStatus={advisoriesStatus}
+                lake={selectedAdvisory}
+              />
+            </div>
             {mode === "sim" ? (
               <span className="sim-badge">Sim</span>
             ) : mode === "review" ? (

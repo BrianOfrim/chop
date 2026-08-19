@@ -2,8 +2,8 @@
 name: chop-map-qa
 description: >-
   Live QA pass of the Chop inland-lake map like a tester. Opens localhost:5173,
-  checks controls, overlays, lake outlines, name labels, heatmaps, the pinned
-  forecast spot, and loading state with browser snapshot plus screenshot. Use
+  checks controls, overlays, lake outlines, name labels, heatmaps, wind arrows,
+  the pinned forecast spot, and loading state with browser snapshot plus screenshot. Use
   when the user asks to QA the map, verify map UI, smoke-test Chop, or check
   that map components are visible and operational.
 ---
@@ -26,6 +26,7 @@ localStorage.removeItem("chop.basemap");
 localStorage.removeItem("chop.mapOverlay");
 localStorage.removeItem("chop.windGlyph");
 localStorage.removeItem("chop.heatmapStyle");
+localStorage.removeItem("chop.forecastPins");
 ```
 
 Then navigate to `http://localhost:5173/` again.
@@ -38,6 +39,7 @@ Then navigate to `http://localhost:5173/` again.
 - Wait on the loading chip **or** a painted heatmap, not `map.loaded()`.
 - Chop lake names are **title case** (`Pigeon Lake`). Carto Map tiles show ALL-CAPS OSM names — those are not Chop labels. Prove labels on **Topo**.
 - Outlines, names, and the pinned forecast spot are drawn on the DOM canvas `.lake-outlines` above the MapLibre heatmap. A MapLibre `forecast-point` circle under the raster is **not** a pass.
+- Wind **Arrows** and **Particles** are drawn on `.wind-particles` above the heatmap. MapLibre `wind-arrows` lines under the raster are **not** a pass.
 
 ## Procedure
 
@@ -51,10 +53,12 @@ Copy and tick as you go:
 - [ ] Temp heatmap or loading then heatmap
 - [ ] Waves heatmap on selected lake only
 - [ ] Depth: no Blend/Edges; depth legend
+- [ ] Wind arrows above heatmap
 - [ ] Basemap cycle still readable
 - [ ] Lake picker recenters
 - [ ] Zoom-out provincial outlines + names
 - [ ] Pinned forecast spot above heatmap
+- [ ] Per-lake pins survive lake switch
 ```
 
 ### 1. Defaults (snapshot)
@@ -72,6 +76,7 @@ After reload:
 - **Waves** then **Depth**: Blend/Edges gone. Legend is `Wave height Hs` then `Depth`.
 - **Temp**: Blend/Edges back. Legend is `Temperature`.
 - **Wind** again: Particles on. `canvas.wind-particles` has class `is-on` if Particles is selected.
+- **Arrows** (Wind overlay, heatmap on): directional shafts/chevrons visible **above** the color field across the province (not empty). `canvas.wind-particles` is `is-on`. Switch back to **Particles** afterwards.
 
 ### 3. Canvas visuals (screenshot each overlay)
 
@@ -91,6 +96,7 @@ If `.map-heatmap-loading` is present, wait until it disappears (or ~15s). Chip t
 - Pick another lake in the dropdown: map recenters; bottom readout name matches.
 - Zoom out to provincial view: many outlines + names still visible.
 - On **Wind** (heatmap on), click the **selected** lake’s water (not another lake — that changes the picker). A cream halo + teal dot must sit **above** the heatmap. Legend shows `Pinned spot · Clear`. Still visible after switching to Waves. No pin until you click water.
+- Pin is **per lake**: switch to another lake — that lake has no pin (unless you already pinned it). Switch back — the first lake’s pin is still there. Clear only removes the **selected** lake’s pin.
 
 ## Report
 
@@ -113,7 +119,8 @@ No product edits unless asked. One screenshot per **failed** visual (not every p
 | Basemap cycle | pass/fail | |
 | Lake picker recenter | pass/fail | |
 | Zoom-out labels+outlines | pass/fail | |
-| Pinned forecast spot | pass/fail | Cream/teal pin above Wind heatmap; Clear on legend |
+| Pinned forecast spot | pass/fail | Cream/teal pin above Wind heatmap; Clear on legend; pin remembered per lake |
+| Wind arrows | pass/fail | Arrows visible above Wind heatmap; not buried MapLibre lines |
 
 ## Failures
 - <check>: <what you saw> — screenshot if visual

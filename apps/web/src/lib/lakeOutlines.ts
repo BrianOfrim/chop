@@ -45,7 +45,7 @@ export function drawLakeOutlines(
   fc: GeoJSON.FeatureCollection | null | undefined,
   selectedId: string,
   satellite: boolean,
-  pin?: { lon: number; lat: number } | null,
+  pins?: Array<{ lon: number; lat: number }> | { lon: number; lat: number } | null,
 ): void {
   const wrap = canvas.parentElement;
   const cssW = wrap?.clientWidth || canvas.clientWidth;
@@ -120,7 +120,13 @@ export function drawLakeOutlines(
     }
   }
 
-  if (pin && Number.isFinite(pin.lon) && Number.isFinite(pin.lat)) {
+  const list = Array.isArray(pins)
+    ? pins
+    : pins && Number.isFinite(pins.lon) && Number.isFinite(pins.lat)
+      ? [pins]
+      : [];
+  for (const pin of list) {
+    if (!Number.isFinite(pin.lon) || !Number.isFinite(pin.lat)) continue;
     const p = map.project([pin.lon, pin.lat]);
     if (p.x >= -12 && p.y >= -12 && p.x <= cssW + 12 && p.y <= cssH + 12) {
       drawForecastPin(ctx, p.x, p.y, satellite);

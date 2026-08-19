@@ -137,7 +137,7 @@ export async function fetchHrdpsWindForDate(
 
 /** Hour closest to `atMs` (default now). */
 export function nearestHourIndex(
-  hours: WindHour[],
+  hours: Array<{ time: string }>,
   atMs: number = Date.now(),
 ): number {
   let best = 0;

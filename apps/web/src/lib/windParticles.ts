@@ -1,6 +1,6 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { sampleWindField, type WindFieldSlice } from "./windField";
-import { pointInAlberta } from "./windOverlay";
+import { pointInAlberta, windArrowsGeoJSON } from "./windOverlay";
 
 type TrailPt = { lon: number; lat: number };
 
@@ -368,4 +368,49 @@ export function stepWindParticles(
   }
 
   return true;
+}
+
+/** Static wind arrows on the glyph canvas so they sit above MapLibre heatmaps. */
+export function drawWindArrows(
+  canvas: HTMLCanvasElement,
+  map: MapLibreMap,
+  slice: WindFieldSlice,
+): void {
+  const synced = syncParticleCanvas(canvas, map);
+  if (!synced) return;
+  const { ctx, width, height } = synced;
+  ctx.clearRect(0, 0, width, height);
+  const fc = windArrowsGeoJSON(slice, map.getZoom());
+  ctx.strokeStyle = WIND_STREAK_COLOR;
+  ctx.lineWidth = 1.7;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const f of fc.features) {
+    const g = f.geometry;
+    if (!g) continue;
+    const lines =
+      g.type === "MultiLineString"
+        ? g.coordinates
+        : g.type === "LineString"
+          ? [g.coordinates]
+          : [];
+    for (const line of lines) {
+      if (line.length < 2) continue;
+      ctx.beginPath();
+      let started = false;
+      for (const pos of line) {
+        const lon = pos[0];
+        const lat = pos[1];
+        if (lon == null || lat == null) continue;
+        const p = map.project([lon, lat]);
+        if (!started) {
+          ctx.moveTo(p.x, p.y);
+          started = true;
+        } else {
+          ctx.lineTo(p.x, p.y);
+        }
+      }
+      if (started) ctx.stroke();
+    }
+  }
 }

@@ -7,8 +7,10 @@ export {
 export {
   type GridMeta,
   type LakeGrids,
+  type FetchDirStats,
   nearestDirIndex,
   fetchAtDir,
+  approxMaxHs,
   computeHsGrid,
   sampleGrid,
   sampleGridNearestWater,

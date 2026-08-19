@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { depthLimitHs, smbHs, smbHsDepthLimited } from "../src/smb.js";
+import { approxMaxHs, type FetchDirStats } from "../src/grid.js";
 
 describe("smbHs", () => {
   it("returns 0 for non-positive inputs", () => {
@@ -36,5 +37,25 @@ describe("smbHsDepthLimited", () => {
     const shallow = smbHsDepthLimited(10, 10000, 1);
     expect(shallow).toBeLessThan(deep);
     expect(shallow).toBeCloseTo(0.4, 5);
+  });
+});
+
+describe("approxMaxHs", () => {
+  const stats: FetchDirStats = {
+    directionsDeg: [0, 90, 180, 270],
+    fetchMaxByDirM: [1000, 8000, 1000, 10000],
+    depthAtFetchMaxByDirM: [10, 10, 10, 1],
+  };
+
+  it("uses the max-fetch cell for the nearest direction bin", () => {
+    const east = approxMaxHs(10, 90, stats);
+    const north = approxMaxHs(10, 0, stats);
+    expect(east).toBeGreaterThan(north);
+    expect(east).toBeCloseTo(smbHsDepthLimited(10, 8000, 10), 5);
+  });
+
+  it("applies the depth cap at that cell", () => {
+    const west = approxMaxHs(10, 270, stats);
+    expect(west).toBeCloseTo(0.4, 5);
   });
 });

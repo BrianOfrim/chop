@@ -32,6 +32,31 @@ export type LakeGrids = {
   fetch: Float32Array;
 };
 
+/** Compact per-direction max-fetch summary for ranking lakes without full grids. */
+export type FetchDirStats = {
+  directionsDeg: number[];
+  fetchMaxByDirM: number[];
+  depthAtFetchMaxByDirM: number[];
+};
+
+/**
+ * Lake-max Hs estimate from the per-direction fetch/depth summary, without
+ * scanning the full grid. Stats pick the water cell that maximizes
+ * depth-capped SMB Hs at 10 m/s in each wind-direction bin.
+ */
+export function approxMaxHs(
+  uMps: number,
+  fromDeg: number,
+  stats: FetchDirStats,
+): number {
+  const dirs = stats.directionsDeg;
+  if (dirs.length === 0) return 0;
+  const i = nearestDirIndex(fromDeg, dirs);
+  const fetchM = stats.fetchMaxByDirM[i] ?? 0;
+  const depthM = stats.depthAtFetchMaxByDirM[i] ?? 0;
+  return smbHsDepthLimited(uMps, fetchM, depthM);
+}
+
 /** Nearest fetch-direction index for a meteorological FROM bearing. */
 export function nearestDirIndex(fromDeg: number, directionsDeg: number[]): number {
   const n = directionsDeg.length;

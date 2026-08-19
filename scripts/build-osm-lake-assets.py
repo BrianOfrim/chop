@@ -35,6 +35,8 @@ except ImportError as e:
 N_DIRS = 16
 DIRECTIONS = [i * (360 / N_DIRS) for i in range(N_DIRS)]
 
+from fetch_dir_stats import fetch_dir_max_stats
+
 
 def compute_fetch(
     wind_from_deg: float,
@@ -250,6 +252,7 @@ def main() -> None:
     depth_out[~mask] = np.float32(-1.0)
     depth_out.tofile(out / "depth.bin")
     fetch.tofile(out / "fetch_16dir.bin")
+    fetch_max_by_dir, depth_at_fetch_max = fetch_dir_max_stats(depth_out, fetch, mask)
 
     meta = {
         "spotId": spot.get("spotId", out.name),
@@ -285,6 +288,8 @@ def main() -> None:
             "depthMaxM": float(np.nanmax(depth[mask])),
             "depthMeanM": float(np.nanmean(depth[mask])),
             "fetchMaxM": float(fetch[:, mask].max()),
+            "fetchMaxByDirM": fetch_max_by_dir,
+            "depthAtFetchMaxByDirM": depth_at_fetch_max,
         },
     }
     (out / "grid.json").write_text(json.dumps(meta, indent=2) + "\n")

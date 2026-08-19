@@ -41,13 +41,13 @@ import {
   buildAlbertaWindMask,
   paintTempField,
   paintWindField,
-  windArrowsGeoJSON,
   windCanvasCoordinates,
   windCanvasSize,
 } from "../lib/windOverlay";
 import {
   clearParticleCanvas,
   createParticleField,
+  drawWindArrows,
   prefersReducedWindMotion,
   stepWindParticles,
   WIND_STREAK_COLOR,
@@ -174,6 +174,8 @@ type Props = {
   simulating?: boolean;
   historic?: boolean;
   forecastPoint?: ForecastPoint | null;
+  /** All lake pins; drawn together so each lake can keep its own spot. */
+  forecastPins?: Record<string, ForecastPoint>;
   gpxTrack?: GpxTrack | null;
   /** Moving cursor along an uploaded track (session scrubber). */
   gpxCursor?: { lon: number; lat: number; headingDeg?: number | null } | null;
@@ -1065,6 +1067,7 @@ export function MapView({
   simulating = false,
   historic = false,
   forecastPoint = null,
+  forecastPins = {},
   gpxTrack = null,
   gpxCursor = null,
   gpxWindTicks = null,
@@ -1116,6 +1119,8 @@ export function MapView({
   selectedLakeIdRef.current = selectedLakeId;
   const forecastPointRef = useRef(forecastPoint);
   forecastPointRef.current = forecastPoint;
+  const forecastPinsRef = useRef(forecastPins);
+  forecastPinsRef.current = forecastPins;
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>(() =>
@@ -1919,13 +1924,14 @@ export function MapView({
     const canvas = lakeOutlineCanvasRef.current;
     if (!map || !ready || !canvas) return;
     const draw = () => {
+      const pins = Object.values(forecastPinsRef.current);
       drawLakeOutlines(
         canvas,
         map,
         allShorelinesRef.current,
         selectedLakeIdRef.current,
         basemap === "satellite",
-        forecastPointRef.current,
+        pins.length > 0 ? pins : forecastPointRef.current,
       );
     };
     draw();
@@ -1938,7 +1944,7 @@ export function MapView({
       map.off("resize", draw);
       ro.disconnect();
     };
-  }, [ready, allShorelines, selectedLakeId, basemap, forecastPoint]);
+  }, [ready, allShorelines, selectedLakeId, basemap, forecastPoint, forecastPins]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2049,7 +2055,7 @@ export function MapView({
       );
     }
     try {
-      ensureWindArrowsLineLayer(map, showGlyphs && windGlyph === "arrows");
+      ensureWindArrowsLineLayer(map, false);
     } catch (err) {
       console.error("Wind arrows layer failed", err);
     }
@@ -2120,31 +2126,12 @@ export function MapView({
         setFieldHeatmapReady(true);
       }
       applyArrows();
-      if (
-        showsWindGlyphs(overlayNow) &&
-        windGlyphRef.current === "arrows" &&
-        map.getLayer("wind-arrows")
-      ) {
-        map.moveLayer("wind-arrows");
-      }
     };
     const applyArrows = () => {
-      const slice = spatialWindSlice(
-        windSliceRef.current,
-        simulatingRef.current,
-      );
-      const showArrows =
-        showsWindGlyphs(overlayRef.current) &&
-        windGlyphRef.current === "arrows" &&
-        !!slice;
       try {
-        ensureWindArrowsLineLayer(map, showArrows);
+        ensureWindArrowsLineLayer(map, false);
         const src = map.getSource("wind-arrows") as GeoJSONSource | undefined;
-        src?.setData(
-          showArrows && slice
-            ? windArrowsGeoJSON(slice, map.getZoom())
-            : EMPTY_FC,
-        );
+        src?.setData(EMPTY_FC);
       } catch (err) {
         console.error("Wind arrows failed", err);
       }
@@ -2218,6 +2205,31 @@ export function MapView({
       clearParticleCanvas(canvas);
     };
   }, [overlay, ready, windGlyph]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const canvas = windParticleCanvasRef.current;
+    if (!map || !ready || !canvas) return;
+    if (!showsWindGlyphs(overlay) || windGlyph !== "arrows") return;
+    const draw = () => {
+      const slice = spatialWindSlice(
+        windSliceRef.current,
+        simulatingRef.current,
+      );
+      if (!slice) {
+        clearParticleCanvas(canvas);
+        return;
+      }
+      drawWindArrows(canvas, map, slice);
+    };
+    draw();
+    map.on("move", draw);
+    map.on("resize", draw);
+    return () => {
+      map.off("move", draw);
+      map.off("resize", draw);
+    };
+  }, [overlay, ready, windGlyph, windSlice, simulating]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2451,9 +2463,7 @@ export function MapView({
       <canvas
         ref={windParticleCanvasRef}
         className={
-          showsWindGlyphs(overlay) && windGlyph === "particles"
-            ? "wind-particles is-on"
-            : "wind-particles"
+          showsWindGlyphs(overlay) ? "wind-particles is-on" : "wind-particles"
         }
         aria-hidden="true"
       />
