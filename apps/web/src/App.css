@@ -1172,16 +1172,20 @@
   top: 3.05rem;
 }
 
-.heatmap-style-toggle {
+.radar-toggle {
   top: 5.35rem;
 }
 
-.wind-glyph-toggle {
+.heatmap-style-toggle {
   top: 7.65rem;
 }
 
+.wind-glyph-toggle {
+  top: 9.95rem;
+}
+
 .wind-glyph-toggle.is-up {
-  top: 5.35rem;
+  top: 7.65rem;
 }
 
 .overlay-toggle button {

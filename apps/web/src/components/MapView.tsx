@@ -69,6 +69,15 @@ import {
 import { DEFAULT_DEPTH_SCALE, DEFAULT_TEMP_SCALE, DEFAULT_WAVE_SCALE, DEFAULT_WIND_SCALE, sampleRgb, scaleGradientCss, type ColorScaleId } from "../lib/colorScales";
 import type { GpxTrack } from "../lib/gpx";
 import {
+  fetchRadarTime,
+  formatRadarWhen,
+  RADAR_ATTRIBUTION,
+  RADAR_POLL_MS,
+  RADAR_RAIN_SOURCE,
+  RADAR_WMS_LAYERS,
+  radarTileUrl,
+} from "../lib/radar";
+import {
   sampleTempField,
   type TempFieldSlice,
 } from "../lib/tempField";
@@ -214,6 +223,7 @@ const BASEMAP_KEY = "chop.basemap";
 const OVERLAY_KEY = "chop.mapOverlay";
 const WIND_GLYPH_KEY = "chop.windGlyph";
 const HEATMAP_STYLE_KEY = "chop.heatmapStyle";
+const RADAR_KEY = "chop.radar";
 
 function loadBasemap(): BasemapId {
   try {
@@ -280,6 +290,22 @@ function loadHeatmapStyle(): HeatmapStyle {
 function saveHeatmapStyle(id: HeatmapStyle): void {
   try {
     localStorage.setItem(HEATMAP_STYLE_KEY, id);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function loadRadar(): boolean {
+  try {
+    return localStorage.getItem(RADAR_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveRadar(on: boolean): void {
+  try {
+    localStorage.setItem(RADAR_KEY, on ? "1" : "0");
   } catch {
     // ignore quota / private mode
   }
@@ -360,6 +386,62 @@ function placeHeatmapUnderLakes(map: MapLibreMap, layerId: string) {
         ? "lakes-labels"
         : undefined;
   if (before) map.moveLayer(layerId, before);
+}
+
+function setRasterTiles(map: MapLibreMap, sourceId: string, tiles: string[]): void {
+  const src = map.getSource(sourceId) as
+    | { setTiles?: (next: string[]) => void }
+    | undefined;
+  src?.setTiles?.(tiles);
+}
+
+/** Live ECCC radar above heatmaps, under lake outlines. Independent of overlay. */
+function ensureRadarLayers(
+  map: MapLibreMap,
+  timeIso: string | null,
+  visible: boolean,
+): void {
+  for (const { sourceId, wmsLayer } of RADAR_WMS_LAYERS) {
+    const tiles = [radarTileUrl(wmsLayer, timeIso)];
+    if (!map.getSource(sourceId)) {
+      map.addSource(sourceId, {
+        type: "raster",
+        tiles,
+        tileSize: 256,
+        ...(sourceId === RADAR_RAIN_SOURCE
+          ? { attribution: RADAR_ATTRIBUTION }
+          : {}),
+      });
+      map.addLayer({
+        id: sourceId,
+        type: "raster",
+        source: sourceId,
+        layout: { visibility: visible ? "visible" : "none" },
+        paint: {
+          "raster-opacity": 0.82,
+          "raster-fade-duration": 0,
+        },
+      });
+      placeHeatmapUnderLakes(map, sourceId);
+      continue;
+    }
+    setRasterTiles(map, sourceId, tiles);
+    if (map.getLayer(sourceId)) {
+      map.setLayoutProperty(
+        sourceId,
+        "visibility",
+        visible ? "visible" : "none",
+      );
+    }
+  }
+  map.triggerRepaint();
+}
+
+function removeRadarLayers(map: MapLibreMap): void {
+  for (const { sourceId } of [...RADAR_WMS_LAYERS].reverse()) {
+    if (map.getLayer(sourceId)) map.removeLayer(sourceId);
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  }
 }
 
 /** MapLibre canvas sources skip prepare() until a covering tile exists; poke after paint. */
@@ -1219,6 +1301,10 @@ export function MapView({
   const [heatmapStyle, setHeatmapStyle] = useState<HeatmapStyle>(() =>
     typeof window !== "undefined" ? loadHeatmapStyle() : "blend",
   );
+  const [radarOn, setRadarOn] = useState(() =>
+    typeof window !== "undefined" ? loadRadar() : false,
+  );
+  const [radarTime, setRadarTime] = useState<string | null>(null);
   const [fieldHeatmapReady, setFieldHeatmapReady] = useState(false);
   const overlayRef = useRef(overlay);
   const windGlyphRef = useRef(windGlyph);
@@ -1238,6 +1324,41 @@ export function MapView({
     setLegendHoverT(null);
     setLegendTipOpen(false);
   }, [overlay, onOverlayChange]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!radarOn) {
+      removeRadarLayers(map);
+      setRadarTime(null);
+      return;
+    }
+    let cancelled = false;
+    const sync = async () => {
+      let time: string | null = null;
+      try {
+        time = await fetchRadarTime();
+      } catch (err) {
+        console.error("Radar time failed", err);
+      }
+      if (cancelled) return;
+      const live = mapRef.current;
+      if (!live) return;
+      ensureRadarLayers(live, time, true);
+      setRadarTime(time);
+    };
+    void sync();
+    const id = window.setInterval(() => void sync(), RADAR_POLL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [radarOn, ready]);
 
   gridsRef.current = grids;
   shorelineRef.current = shoreline;
@@ -2574,7 +2695,13 @@ export function MapView({
         : forecastPoint
           ? null
           : "Click the lake to pin a forecast spot.";
-    return hint ? [source, hint] : [source];
+    const radar =
+      radarOn && radarTime
+        ? `Radar is ECCC now-cast (${formatRadarWhen(radarTime)}), not the selected forecast hour.`
+        : radarOn
+          ? "Radar is ECCC now-cast (latest 6-min composite), not the selected forecast hour."
+          : null;
+    return [source, hint, radar].filter((line): line is string => !!line);
   }, [
     overlay,
     depthIntervalM,
@@ -2587,6 +2714,8 @@ export function MapView({
     gpxCursor,
     historic,
     forecastPoint,
+    radarOn,
+    radarTime,
   ]);
 
   const fieldSliceReady =
@@ -2687,6 +2816,20 @@ export function MapView({
           }}
         >
           Depth
+        </button>
+      </div>
+      <div className="basemap-toggle radar-toggle" role="group" aria-label="Weather radar">
+        <button
+          type="button"
+          className={radarOn ? "is-on" : ""}
+          aria-pressed={radarOn}
+          onClick={() => {
+            const next = !radarOn;
+            setRadarOn(next);
+            saveRadar(next);
+          }}
+        >
+          Radar
         </button>
       </div>
       {showsFieldHeatmap(overlay) ? (
