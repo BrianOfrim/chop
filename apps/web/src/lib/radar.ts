@@ -32,6 +32,24 @@ export const RADAR_ATTRIBUTION =
 /** Poll while the layer is on; GeoMet publishes a new frame every 6 minutes. */
 export const RADAR_POLL_MS = 2 * 60 * 1000;
 
+export const RADAR_STORAGE_KEY = "chop.radar";
+
+export function loadRadar(): boolean {
+  try {
+    return localStorage.getItem(RADAR_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveRadar(on: boolean): void {
+  try {
+    localStorage.setItem(RADAR_STORAGE_KEY, on ? "1" : "0");
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 const OBS_CAP_LAYER = "RADAR_1KM_RRAI";
 const NOWCAST_CAP_LAYER = "Radar_1km_RainPrecipRate-Extrapolation";
 
@@ -307,4 +325,44 @@ export function formatRadarLegend(frame: RadarFrame): string | null {
   return frame.kind === "nowcast"
     ? `Radar nowcast ${when}`
     : `Radar observed ${when}`;
+}
+
+export type RadarTimeline = {
+  times: string[];
+  liveIndex: number;
+};
+
+/**
+ * Ordered unique 6-min frames: observed archive, then nowcast times
+ * strictly after the latest observation.
+ */
+export function radarTimeline(windows: RadarWindows | null): RadarTimeline {
+  if (!windows) return { times: [], liveIndex: 0 };
+  const seen = new Set<string>();
+  const times: string[] = [];
+  const push = (iso: string) => {
+    if (seen.has(iso)) return;
+    seen.add(iso);
+    times.push(iso);
+  };
+  for (const iso of windows.observed.times) push(iso);
+  if (windows.nowcast) {
+    for (const iso of windows.nowcast.times) {
+      const t = Date.parse(iso);
+      if (Number.isFinite(t) && t > windows.observed.endMs) push(iso);
+    }
+  }
+  times.sort((a, b) => Date.parse(a) - Date.parse(b));
+  const liveIso =
+    windows.observed.defaultIso ??
+    windows.observed.times[windows.observed.times.length - 1] ??
+    null;
+  let liveIndex = liveIso ? times.indexOf(liveIso) : -1;
+  if (liveIndex < 0) {
+    liveIndex = 0;
+    for (let i = 0; i < times.length; i++) {
+      if (Date.parse(times[i]!) <= windows.observed.endMs) liveIndex = i;
+    }
+  }
+  return { times, liveIndex };
 }

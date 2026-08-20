@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Topbar } from "./components/Topbar";
-import { MapView, type OverlayId } from "./components/MapView";
+import { MapView, type OverlayId, type BasemapId, type WindGlyphId, loadBasemap, saveBasemap, loadWindGlyph, saveWindGlyph, loadOverlay, saveOverlay } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
 import { TempChart, hasTempHours } from "./components/TempChart";
 import { WaveChart, type ForecastPoint } from "./components/WaveChart";
 import { ForecastTimeAxis } from "./components/ForecastTimeAxis";
+import { RadarTimeline } from "./components/RadarTimeline";
 import { WeatherStrip } from "./components/WeatherStrip";
 import {
   loadAllLakeShorelines,
@@ -60,6 +61,14 @@ import {
   type LakeGrids,
 } from "@chop/wave-engine";
 import { formatSelectedWhen, sliderInsetStyle } from "./lib/forecastChart";
+import {
+  fetchRadarWindows,
+  loadRadar,
+  RADAR_POLL_MS,
+  radarTimeline,
+  saveRadar,
+  type RadarWindows,
+} from "./lib/radar";
 import { WindSimPanel } from "./components/WindSimPanel";
 import { SessionWaveChart } from "./components/SessionWaveChart";
 import { SessionWindChart } from "./components/SessionWindChart";
@@ -106,6 +115,13 @@ import "./App.css";
 const REVIEW_FOLLOW_KEY = "chop.reviewFollow";
 const BOTTOM_PANEL_KEY = "chop.bottomPanelCollapsed";
 const FORECAST_PINS_KEY = "chop.forecastPins";
+
+const MAP_LAYERS = [
+  ["wind", "Wind"],
+  ["waves", "Waves"],
+  ["temp", "Temp"],
+  ["depth", "Depth"],
+] as const;
 
 type ForecastPins = Record<string, ForecastPoint>;
 
@@ -222,6 +238,21 @@ export default function App() {
   >("idle");
   const [reviewFollow, setReviewFollow] = useState(loadReviewFollow);
   const [bottomCollapsed, setBottomCollapsed] = useState(loadBottomCollapsed);
+  const [radarOn, setRadarOn] = useState(() =>
+    typeof window !== "undefined" ? loadRadar() : false,
+  );
+  const [radarWindows, setRadarWindows] = useState<RadarWindows | null>(null);
+  const [radarSelectedIso, setRadarSelectedIso] = useState<string | null>(null);
+  const [radarFollowLive, setRadarFollowLive] = useState(true);
+  const [basemap, setBasemap] = useState<BasemapId>(() =>
+    typeof window !== "undefined" ? loadBasemap() : "topo",
+  );
+  const [windGlyph, setWindGlyph] = useState<WindGlyphId>(() =>
+    typeof window !== "undefined" ? loadWindGlyph() : "particles",
+  );
+  const [overlay, setOverlay] = useState<OverlayId>(() =>
+    typeof window !== "undefined" ? loadOverlay() : "wind",
+  );
   const pendingSessionRef = useRef<GpxTrack | null>(null);
   const gpxInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -243,8 +274,12 @@ export default function App() {
   const [rangeWindStatus, setRangeWindStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
-  const [needWindField, setNeedWindField] = useState(true);
-  const [needTempField, setNeedTempField] = useState(false);
+  const [needWindField, setNeedWindField] = useState(
+    () => radarOn || overlay === "wind" || overlay === "waves",
+  );
+  const [needTempField, setNeedTempField] = useState(
+    () => !radarOn && overlay === "temp",
+  );
   const [forecastTempField, setForecastTempField] = useState<TempField | null>(
     null,
   );
@@ -252,10 +287,66 @@ export default function App() {
     "idle" | "loading" | "ready" | "error"
   >("idle");
 
+  const onRadarChange = useCallback((on: boolean) => {
+    setRadarOn(on);
+    saveRadar(on);
+    if (on) {
+      setNeedWindField(true);
+      setNeedTempField(false);
+      setRadarFollowLive(true);
+      setBottomCollapsed((prev) => {
+        if (!prev) return prev;
+        saveBottomCollapsed(false);
+        return false;
+      });
+    }
+  }, []);
+
   const onOverlayChange = useCallback((id: OverlayId) => {
+    setOverlay(id);
+    saveOverlay(id);
     setNeedWindField(id === "wind" || id === "waves");
     setNeedTempField(id === "temp");
+    onRadarChange(false);
+  }, [onRadarChange]);
+
+  const onBasemapChange = useCallback((id: BasemapId) => {
+    setBasemap(id);
+    saveBasemap(id);
   }, []);
+
+  const onWindGlyphChange = useCallback((id: WindGlyphId) => {
+    setWindGlyph(id);
+    saveWindGlyph(id);
+  }, []);
+
+  useEffect(() => {
+    if (!radarOn) {
+      setRadarWindows(null);
+      return;
+    }
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const windows = await fetchRadarWindows();
+        if (cancelled) return;
+        setRadarWindows(windows);
+      } catch (err) {
+        console.error("Radar time failed", err);
+      }
+    };
+    void sync();
+    const id = window.setInterval(() => void sync(), RADAR_POLL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [radarOn]);
 
   function updateUnits(patch: Partial<UnitPrefs>) {
     setUnits((prev) => {
@@ -529,8 +620,32 @@ export default function App() {
   const chartNowIndex = nearestHourIndex(chartHours);
   const chartSelectedTime = chartHours[chartIndex]?.time;
 
+  const radarClock = useMemo(() => radarTimeline(radarWindows), [radarWindows]);
+  const radarIndex = useMemo(() => {
+    if (radarFollowLive || !radarSelectedIso) return radarClock.liveIndex;
+    const i = radarClock.times.indexOf(radarSelectedIso);
+    return i >= 0 ? i : radarClock.liveIndex;
+  }, [radarFollowLive, radarSelectedIso, radarClock]);
+  const radarTimeIso = radarClock.times[radarIndex] ?? null;
+
+  const selectRadarIndex = useCallback(
+    (index: number) => {
+      const iso = radarClock.times[index] ?? null;
+      const live = index === radarClock.liveIndex;
+      setRadarSelectedIso((prev) => (prev === iso ? prev : iso));
+      setRadarFollowLive((prev) => (prev === live ? prev : live));
+    },
+    [radarClock],
+  );
+
   const forecastWind = forecastHours[hourIndex] ?? null;
   const historyWind = historyHours[historyIndex] ?? null;
+  const radarSnappedHour = useMemo(() => {
+    if (!radarOn || !radarTimeIso || forecastHours.length === 0) return null;
+    const t = Date.parse(radarTimeIso);
+    if (!Number.isFinite(t)) return null;
+    return forecastHours[nearestHourIndex(forecastHours, t)] ?? null;
+  }, [radarOn, radarTimeIso, forecastHours]);
 
   function applyTrack(track: GpxTrack) {
     setGpxError(null);
@@ -735,54 +850,67 @@ export default function App() {
     [simSpeedMps, simDirDeg],
   );
 
-  const wind =
-    mode === "sim"
-      ? simWind
-      : mode === "review" && sessionSample
-        ? sessionSample.wind
-        : mode === "history"
-          ? historyWind
-          : (() => {
-              if (!forecastWind) return null;
-              let hour = forecastWind;
-              if (forecastPoint && forecastWindField) {
-                const slice = sliceWindField(
-                  forecastWindField,
-                  forecastWind.time,
-                  HRDPS_HANDOFF_MS,
-                );
-                if (slice) {
-                  const s = sampleWindField(
-                    slice,
-                    forecastPoint.lon,
-                    forecastPoint.lat,
-                  );
-                  if (s) {
-                    hour = {
-                      ...hour,
-                      windSpeedMps: s.speedMps,
-                      windDirDeg: s.dirDeg,
-                    };
-                  }
-                }
-              }
-              if (forecastPoint && forecastTempField) {
-                const tSlice = sliceTempField(
-                  forecastTempField,
-                  hour.time,
-                  HRDPS_HANDOFF_MS,
-                );
-                if (tSlice) {
-                  const tempC = sampleTempField(
-                    tSlice,
-                    forecastPoint.lon,
-                    forecastPoint.lat,
-                  );
-                  if (tempC != null) hour = { ...hour, tempC };
-                }
-              }
-              return hour;
-            })();
+  const wind = useMemo(() => {
+    if (mode === "sim") return simWind;
+    const hour =
+      radarOn && radarSnappedHour
+        ? radarSnappedHour
+        : mode === "review" && sessionSample
+          ? sessionSample.wind
+          : mode === "history"
+            ? historyWind
+            : forecastWind;
+    if (!hour) return null;
+    let next = hour;
+    if (forecastPoint && forecastWindField && next.time !== "sim") {
+      const slice = sliceWindField(
+        forecastWindField,
+        next.time,
+        HRDPS_HANDOFF_MS,
+      );
+      if (slice) {
+        const s = sampleWindField(
+          slice,
+          forecastPoint.lon,
+          forecastPoint.lat,
+        );
+        if (s) {
+          next = {
+            ...next,
+            windSpeedMps: s.speedMps,
+            windDirDeg: s.dirDeg,
+          };
+        }
+      }
+    }
+    if (forecastPoint && forecastTempField && next.time !== "sim") {
+      const tSlice = sliceTempField(
+        forecastTempField,
+        next.time,
+        HRDPS_HANDOFF_MS,
+      );
+      if (tSlice) {
+        const tempC = sampleTempField(
+          tSlice,
+          forecastPoint.lon,
+          forecastPoint.lat,
+        );
+        if (tempC != null) next = { ...next, tempC };
+      }
+    }
+    return next;
+  }, [
+    mode,
+    simWind,
+    radarOn,
+    radarSnappedHour,
+    sessionSample,
+    historyWind,
+    forecastWind,
+    forecastPoint,
+    forecastWindField,
+    forecastTempField,
+  ]);
 
   const neededWindRange = useMemo(() => {
     if (!needWindField) return null;
@@ -853,26 +981,28 @@ export default function App() {
         ? sliceWindField(field, wind.time, HRDPS_HANDOFF_MS)
         : null;
     const sliced =
-      mode === "history"
-        ? nearest(rangeWindField)
-        : mode === "review"
-          ? nearest(forecastWindField) ?? nearest(rangeWindField)
-          : nearest(forecastWindField);
+      radarOn || (mode !== "history" && mode !== "review")
+        ? nearest(forecastWindField)
+        : mode === "history"
+          ? nearest(rangeWindField)
+          : nearest(forecastWindField) ?? nearest(rangeWindField);
     return sliced;
-  }, [mode, wind, forecastWindField, rangeWindField]);
+  }, [mode, wind, forecastWindField, rangeWindField, radarOn]);
 
   const windFieldStatus =
     mode === "sim"
       ? ("ready" as const)
-      : mode === "history"
-        ? rangeWindStatus === "idle"
-          ? historyStatus === "loading"
-            ? ("loading" as const)
-            : historyStatus
-          : rangeWindStatus
-        : mode === "review" && rangeWindStatus !== "idle"
-          ? rangeWindStatus
-          : forecastWindStatus;
+      : radarOn || mode === "forecast"
+        ? forecastWindStatus
+        : mode === "history"
+          ? rangeWindStatus === "idle"
+            ? historyStatus === "loading"
+              ? ("loading" as const)
+              : historyStatus
+            : rangeWindStatus
+          : mode === "review" && rangeWindStatus !== "idle"
+            ? rangeWindStatus
+            : forecastWindStatus;
 
   const tempSlice = useMemo(() => {
     if (mode === "sim" || !wind || wind.time === "sim" || !forecastTempField) {
@@ -1039,6 +1169,12 @@ export default function App() {
         lakeId={lakeId}
         lakes={lakes}
         onLakeId={setLakeId}
+        mode={mode}
+        onModeChange={changeMode}
+        basemap={basemap}
+        onBasemapChange={onBasemapChange}
+        windGlyph={windGlyph}
+        onWindGlyphChange={onWindGlyphChange}
       />
 
       <main className="main">
@@ -1070,13 +1206,17 @@ export default function App() {
             historic={mode === "history"}
             clockMode={mode}
             selectedTime={
-              mode === "sim"
-                ? null
-                : mode === "review" && sessionSample
-                  ? sessionSample.time
-                  : (chartSelectedTime ?? null)
+              radarOn
+                ? radarTimeIso
+                : mode === "sim"
+                  ? null
+                  : mode === "review" && sessionSample
+                    ? sessionSample.time
+                    : (chartSelectedTime ?? null)
             }
-            radarFollowLive={mode === "forecast" && chartIndex === chartNowIndex}
+            radarFollowLive={radarOn && radarFollowLive}
+            radarOn={radarOn}
+            radarWindows={radarWindows}
             forecastPoint={forecastPoint}
             gpxTrack={mode === "review" ? gpxTrack : null}
             gpxCursor={
@@ -1115,12 +1255,13 @@ export default function App() {
             windFieldStatus={windFieldStatus}
             tempSlice={tempSlice}
             tempFieldStatus={tempFieldStatus}
-            onOverlayChange={onOverlayChange}
+            overlay={overlay}
+            basemap={basemap}
+            windGlyph={windGlyph}
           />
         )}
         <WindSimPanel
           mode={mode}
-          onModeChange={changeMode}
           speedMps={simSpeedMps}
           dirDeg={simDirDeg}
           onSpeedMps={setSimSpeedMps}
@@ -1185,8 +1326,16 @@ export default function App() {
             type="button"
             className="bottombar-fold"
             aria-expanded={!bottomCollapsed}
-            aria-controls="bottom-charts"
-            title={bottomCollapsed ? "Show charts" : "Hide charts"}
+            aria-controls={radarOn ? "radar-timeline" : "bottom-charts"}
+            title={
+              bottomCollapsed
+                ? radarOn
+                  ? "Show radar timeline"
+                  : "Show charts"
+                : radarOn
+                  ? "Hide radar timeline"
+                  : "Hide charts"
+            }
             onClick={() => {
               setBottomCollapsed((prev) => {
                 const next = !prev;
@@ -1198,7 +1347,7 @@ export default function App() {
             <span className="plot-fold-chevron" aria-hidden>
               {bottomCollapsed ? "▸" : "▾"}
             </span>
-            Charts
+            {radarOn ? "Radar" : "Charts"}
           </button>
           <div className="readout">
             <div className="readout-primary">
@@ -1337,6 +1486,8 @@ export default function App() {
             )}
             </div>
           </div>
+          <div className="bottombar-trailing">
+          {!radarOn ? (
           <div
             className="range-toggle"
             role="group"
@@ -1360,8 +1511,42 @@ export default function App() {
               </button>
             ))}
           </div>
+          ) : null}
+          <div className="overlay-nav" role="group" aria-label="Map layer">
+            {MAP_LAYERS.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={!radarOn && overlay === id ? "is-on" : undefined}
+                aria-pressed={!radarOn && overlay === id}
+                onClick={() => onOverlayChange(id)}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={`overlay-nav-radar${radarOn ? " is-on" : ""}`}
+              aria-pressed={radarOn}
+              aria-controls="radar-timeline"
+              title="Show weather radar"
+              onClick={() => onRadarChange(true)}
+            >
+              Radar
+            </button>
+          </div>
+          </div>
         </div>
-        {!bottomCollapsed && (reviewActive ? (
+        {!bottomCollapsed && (radarOn ? (
+          <RadarTimeline
+            windows={radarWindows}
+            committedIndex={radarIndex}
+            followLive={radarFollowLive}
+            onCommitIndex={selectRadarIndex}
+            shoreline={shoreline}
+            pin={forecastPoint}
+          />
+        ) : reviewActive ? (
           <div id="bottom-charts" className="forecast-panel">
             <CollapsiblePlot id="review-wind" title="Wind">
               <SessionWindChart

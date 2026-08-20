@@ -7,7 +7,27 @@ import {
 } from "../lib/units";
 import type { LakeIndexEntry } from "../lib/lakeAssets";
 import { MOBILE_MQ } from "../lib/mobile";
+import type { WindMode } from "../lib/historyRange";
 import type { AppView } from "../lib/view";
+import type { BasemapId, WindGlyphId } from "./MapView";
+
+const WIND_MODES = [
+  ["forecast", "Forecast"],
+  ["history", "History"],
+  ["review", "Review"],
+  ["sim", "Sim"],
+] as const;
+
+const BASEMAPS = [
+  ["topo", "Topo"],
+  ["map", "Map"],
+  ["satellite", "Satellite"],
+] as const;
+
+const WIND_GLYPHS = [
+  ["arrows", "Arrows"],
+  ["particles", "Particles"],
+] as const;
 
 type Props = {
   view: AppView;
@@ -16,6 +36,12 @@ type Props = {
   lakeId?: string;
   lakes?: LakeIndexEntry[];
   onLakeId?: (id: string) => void;
+  mode?: WindMode;
+  onModeChange?: (mode: WindMode) => void;
+  basemap?: BasemapId;
+  onBasemapChange?: (id: BasemapId) => void;
+  windGlyph?: WindGlyphId;
+  onWindGlyphChange?: (id: WindGlyphId) => void;
 };
 
 export function Topbar({
@@ -25,8 +51,18 @@ export function Topbar({
   lakeId,
   lakes,
   onLakeId,
+  mode,
+  onModeChange,
+  basemap,
+  onBasemapChange,
+  windGlyph,
+  onWindGlyphChange,
 }: Props) {
   const showLakePicker = view === "map" && lakes && onLakeId && lakeId != null;
+  const showModeNav = view === "map" && mode != null && onModeChange != null;
+  const showBasemapNav = view === "map" && basemap != null && onBasemapChange != null;
+  const showGlyphNav =
+    view === "map" && windGlyph != null && onWindGlyphChange != null;
   const [unitsOpen, setUnitsOpen] = useState(false);
   const unitsRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +115,22 @@ export function Topbar({
           Compare
         </a>
       </nav>
+      {showModeNav && (
+        <div className="mode-nav" role="tablist" aria-label="Wind source">
+          {WIND_MODES.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={mode === id}
+              className={mode === id ? "is-on" : undefined}
+              onClick={() => onModeChange?.(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       {showLakePicker && (
         <label className="lake-picker">
           Lake
@@ -94,6 +146,36 @@ export function Topbar({
             ))}
           </select>
         </label>
+      )}
+      {showBasemapNav && (
+        <div className="basemap-nav" role="group" aria-label="Basemap">
+          {BASEMAPS.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={basemap === id}
+              className={basemap === id ? "is-on" : undefined}
+              onClick={() => onBasemapChange?.(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {showGlyphNav && (
+        <div className="glyph-nav" role="group" aria-label="Wind glyphs">
+          {WIND_GLYPHS.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={windGlyph === id}
+              className={windGlyph === id ? "is-on" : undefined}
+              onClick={() => onWindGlyphChange?.(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       )}
       <div className="unit-prefs" title="Display units" ref={unitsRef}>
         <button

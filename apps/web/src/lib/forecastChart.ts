@@ -63,6 +63,42 @@ export function formatHourLabel(d: Date): string {
     .toLowerCase();
 }
 
+export function formatHourMinuteLabel(d: Date): string {
+  return d
+    .toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    .replace(/\s/g, "")
+    .toLowerCase();
+}
+
+/**
+ * Wall-clock labels at a fixed minute interval, placed by time along the series.
+ * 15-min marks still line up on a 6-min radar slider.
+ */
+export function buildClockIntervalLabels(
+  times: string[],
+  xAt: (i: number) => number,
+  intervalMin: number,
+): Array<{ x: number; text: string }> {
+  if (times.length === 0 || !(intervalMin > 0)) return [];
+  const start = Date.parse(times[0]!);
+  const end = Date.parse(times[times.length - 1]!);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return [];
+  }
+  const x0 = xAt(0);
+  const x1 = xAt(times.length - 1);
+  const step = intervalMin * 60 * 1000;
+  const span = end - start || 1;
+  let t = Math.ceil(start / step) * step;
+  const labels: Array<{ x: number; text: string }> = [];
+  while (t <= end + 1) {
+    const x = x0 + ((t - start) / span) * (x1 - x0);
+    labels.push({ x, text: formatHourMinuteLabel(new Date(t)) });
+    t += step;
+  }
+  return labels;
+}
+
 /** Selected forecast hour, e.g. "Wed, Aug 19, 10 PM". */
 export function formatSelectedWhen(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -106,12 +142,16 @@ export function buildDaySegs(times: string[]): DaySeg[] {
 export function buildHourLabels(
   times: string[],
   xAt: (i: number) => number,
+  step = hourStep(times.length),
 ): Array<{ x: number; text: string }> {
-  const step = hourStep(times.length);
   const labels: Array<{ x: number; text: string }> = [];
+  let lastKey: string | null = null;
   times.forEach((time, i) => {
     const d = new Date(time);
     if (d.getHours() % step !== 0) return;
+    const key = `${dayKey(d)}-${d.getHours()}`;
+    if (key === lastKey) return;
+    lastKey = key;
     labels.push({ x: xAt(i), text: formatHourLabel(d) });
   });
   if (times.length === 0) return labels;

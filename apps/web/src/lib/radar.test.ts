@@ -5,6 +5,7 @@ import {
   formatRadarRate,
   parseRadarDimension,
   radarLegendGradientCss,
+  radarTimeline,
   RADAR_LEGEND_STOPS,
   radarTileUrl,
   resolveRadarFrame,
@@ -88,6 +89,29 @@ describe("radar time windows", () => {
     );
     assert.equal(frame.kind, "observed");
     assert.equal(frame.timeIso, "2026-08-20T19:18:00Z");
+  });
+
+  it("merges nowcast-only times after the observed end", () => {
+    const tl = radarTimeline(windows());
+    assert.equal(tl.times[0], "2026-08-20T16:24:00Z");
+    assert.equal(tl.times[tl.times.length - 1], "2026-08-20T20:30:00Z");
+    assert.equal(
+      tl.times.filter((t) => t === "2026-08-20T19:18:00Z").length,
+      1,
+    );
+    assert.equal(tl.liveIndex, tl.times.indexOf("2026-08-20T19:24:00Z"));
+    assert.ok(tl.liveIndex >= 0);
+    const afterObs = tl.times.filter(
+      (t) => Date.parse(t) > Date.parse("2026-08-20T19:24:00Z"),
+    );
+    assert.equal(afterObs[0], "2026-08-20T19:30:00Z");
+    assert.ok(!afterObs.includes("2026-08-20T19:18:00Z"));
+  });
+
+  it("returns an empty timeline without windows", () => {
+    const tl = radarTimeline(null);
+    assert.deepEqual(tl.times, []);
+    assert.equal(tl.liveIndex, 0);
   });
 });
 

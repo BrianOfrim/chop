@@ -70,14 +70,12 @@ import {
 import { DEFAULT_DEPTH_SCALE, DEFAULT_TEMP_SCALE, DEFAULT_WAVE_SCALE, DEFAULT_WIND_SCALE, sampleRgb, scaleGradientCss, type ColorScaleId } from "../lib/colorScales";
 import type { GpxTrack } from "../lib/gpx";
 import {
-  fetchRadarWindows,
   formatRadarLegend,
   formatRadarRate,
   formatRadarTick,
   RADAR_ATTRIBUTION,
   RADAR_LEGEND_TICK_RATES,
   RADAR_OBS_LAYERS,
-  RADAR_POLL_MS,
   RADAR_RAIN_SOURCE,
   radarLegendGradientCss,
   radarTileUrl,
@@ -94,23 +92,24 @@ import {
 import { TEMP_COLOR_MAX_C, TEMP_COLOR_MIN_C } from "../lib/tempScale";
 
 export type OverlayId = "waves" | "depth" | "wind" | "temp";
-type WindGlyphId = "arrows" | "particles";
+export type BasemapId = "map" | "satellite" | "topo";
+export type WindGlyphId = "arrows" | "particles";
 type HeatmapStyle = "blend" | "edges";
 
-function showsWindHeatmap(overlay: OverlayId): boolean {
-  return overlay === "wind";
+function showsWindHeatmap(overlay: OverlayId, radarOn = false): boolean {
+  return !radarOn && overlay === "wind";
 }
 
-function showsTempHeatmap(overlay: OverlayId): boolean {
-  return overlay === "temp";
+function showsTempHeatmap(overlay: OverlayId, radarOn = false): boolean {
+  return !radarOn && overlay === "temp";
 }
 
-function showsFieldHeatmap(overlay: OverlayId): boolean {
-  return showsWindHeatmap(overlay) || showsTempHeatmap(overlay);
+function showsFieldHeatmap(overlay: OverlayId, radarOn = false): boolean {
+  return showsWindHeatmap(overlay, radarOn) || showsTempHeatmap(overlay, radarOn);
 }
 
-function showsWindGlyphs(overlay: OverlayId): boolean {
-  return overlay === "waves" || overlay === "wind";
+function showsWindGlyphs(overlay: OverlayId, radarOn = false): boolean {
+  return radarOn || overlay === "waves" || overlay === "wind";
 }
 
 const LEGEND_TICK_COUNT = 5;
@@ -195,11 +194,13 @@ type Props = {
   units: UnitPrefs;
   simulating?: boolean;
   historic?: boolean;
-  /** Selected forecast / history / session timestamp (ISO). */
+  /** Selected forecast / history / session / radar timestamp (ISO). */
   selectedTime?: string | null;
-  /** Forecast scrubber is on the hour nearest to now — follow latest observed radar. */
+  /** Radar scrubber is on the latest observed frame. */
   radarFollowLive?: boolean;
   clockMode?: WindMode;
+  radarOn?: boolean;
+  radarWindows?: RadarWindows | null;
   forecastPoint?: ForecastPoint | null;
   gpxTrack?: GpxTrack | null;
   /** Moving cursor along an uploaded track (session scrubber). */
@@ -216,7 +217,9 @@ type Props = {
   windFieldStatus?: "idle" | "loading" | "ready" | "error";
   tempSlice?: TempFieldSlice | null;
   tempFieldStatus?: "idle" | "loading" | "ready" | "error";
-  onOverlayChange?: (id: OverlayId) => void;
+  overlay: OverlayId;
+  basemap: BasemapId;
+  windGlyph: WindGlyphId;
 };
 
 type HoverInfo = {
@@ -234,15 +237,12 @@ type HoverInfo = {
   tempC: number | null;
 };
 
-type BasemapId = "map" | "satellite" | "topo";
-
 const BASEMAP_KEY = "chop.basemap";
 const OVERLAY_KEY = "chop.mapOverlay";
 const WIND_GLYPH_KEY = "chop.windGlyph";
 const HEATMAP_STYLE_KEY = "chop.heatmapStyle";
-const RADAR_KEY = "chop.radar";
 
-function loadBasemap(): BasemapId {
+export function loadBasemap(): BasemapId {
   try {
     const v = localStorage.getItem(BASEMAP_KEY);
     if (v === "map" || v === "satellite") return v;
@@ -252,7 +252,7 @@ function loadBasemap(): BasemapId {
   }
 }
 
-function saveBasemap(id: BasemapId): void {
+export function saveBasemap(id: BasemapId): void {
   try {
     localStorage.setItem(BASEMAP_KEY, id);
   } catch {
@@ -260,7 +260,7 @@ function saveBasemap(id: BasemapId): void {
   }
 }
 
-function loadOverlay(): OverlayId {
+export function loadOverlay(): OverlayId {
   try {
     const v = localStorage.getItem(OVERLAY_KEY);
     if (v === "waves" || v === "depth" || v === "temp") return v;
@@ -270,7 +270,7 @@ function loadOverlay(): OverlayId {
   }
 }
 
-function saveOverlay(id: OverlayId): void {
+export function saveOverlay(id: OverlayId): void {
   try {
     localStorage.setItem(OVERLAY_KEY, id);
   } catch {
@@ -278,7 +278,7 @@ function saveOverlay(id: OverlayId): void {
   }
 }
 
-function loadWindGlyph(): WindGlyphId {
+export function loadWindGlyph(): WindGlyphId {
   try {
     if (localStorage.getItem(WIND_GLYPH_KEY) === "arrows") return "arrows";
     if (localStorage.getItem(WIND_GLYPH_KEY) === "particles") return "particles";
@@ -288,7 +288,7 @@ function loadWindGlyph(): WindGlyphId {
   }
 }
 
-function saveWindGlyph(id: WindGlyphId): void {
+export function saveWindGlyph(id: WindGlyphId): void {
   try {
     localStorage.setItem(WIND_GLYPH_KEY, id);
   } catch {
@@ -307,22 +307,6 @@ function loadHeatmapStyle(): HeatmapStyle {
 function saveHeatmapStyle(id: HeatmapStyle): void {
   try {
     localStorage.setItem(HEATMAP_STYLE_KEY, id);
-  } catch {
-    // ignore quota / private mode
-  }
-}
-
-function loadRadar(): boolean {
-  try {
-    return localStorage.getItem(RADAR_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function saveRadar(on: boolean): void {
-  try {
-    localStorage.setItem(RADAR_KEY, on ? "1" : "0");
   } catch {
     // ignore quota / private mode
   }
@@ -405,66 +389,206 @@ function placeHeatmapUnderLakes(map: MapLibreMap, layerId: string) {
   if (before) map.moveLayer(layerId, before);
 }
 
-function setRasterTiles(map: MapLibreMap, sourceId: string, tiles: string[]): void {
+const RADAR_OPACITY = 0.82;
+const radarTilesApplied = new Map<string, string>();
+type RadarBuf = 0 | 1;
+let radarFront: RadarBuf = 0;
+let radarAppliedKey = "";
+let radarLoadGen = 0;
+let radarSourceDataHandler: ((ev: { sourceId?: string }) => void) | null =
+  null;
+
+function radarFrameKey(frame: RadarFrame, visible: boolean): string {
+  const layers = frame.layers.map((l) => l.wmsLayer).join(",");
+  return `${visible ? "1" : "0"}:${frame.kind}:${frame.timeIso ?? ""}:${layers}`;
+}
+
+function bufferedRadarId(sourceId: string, buf: RadarBuf): string {
+  return buf === 0 ? sourceId : `${sourceId}-b`;
+}
+
+function allRadarLayerIds(): string[] {
+  return RADAR_OBS_LAYERS.flatMap(({ sourceId }) => [
+    bufferedRadarId(sourceId, 0),
+    bufferedRadarId(sourceId, 1),
+  ]);
+}
+
+function setRadarVisibility(
+  map: MapLibreMap,
+  sourceId: string,
+  visible: boolean,
+): void {
+  if (!map.getLayer(sourceId)) return;
+  const next = visible ? "visible" : "none";
+  if (map.getLayoutProperty(sourceId, "visibility") === next) return;
+  map.setLayoutProperty(sourceId, "visibility", next);
+}
+
+function setRadarOpacity(map: MapLibreMap, sourceId: string, opacity: number): void {
+  if (!map.getLayer(sourceId)) return;
+  if (map.getPaintProperty(sourceId, "raster-opacity") === opacity) return;
+  map.setPaintProperty(sourceId, "raster-opacity", opacity);
+}
+
+function detachRadarLoadHandler(map: MapLibreMap): void {
+  if (!radarSourceDataHandler) return;
+  map.off("sourcedata", radarSourceDataHandler);
+  radarSourceDataHandler = null;
+}
+
+function setRasterTiles(map: MapLibreMap, sourceId: string, tiles: string[]): boolean {
+  const next = tiles[0] ?? "";
+  if (radarTilesApplied.get(sourceId) === next && map.getSource(sourceId)) {
+    return false;
+  }
   const src = map.getSource(sourceId) as
     | { setTiles?: (next: string[]) => void }
     | undefined;
   src?.setTiles?.(tiles);
+  radarTilesApplied.set(sourceId, next);
+  return true;
+}
+
+function ensureRadarBuffer(
+  map: MapLibreMap,
+  buf: RadarBuf,
+  frame: RadarFrame,
+  shown: boolean,
+): boolean {
+  let changed = false;
+  const opacity = shown ? RADAR_OPACITY : 0;
+  for (const { sourceId, wmsLayer } of frame.layers) {
+    const id = bufferedRadarId(sourceId, buf);
+    const tiles = [radarTileUrl(wmsLayer, frame.timeIso)];
+    if (!map.getSource(id)) {
+      map.addSource(id, {
+        type: "raster",
+        tiles,
+        tileSize: 256,
+        ...(sourceId === RADAR_RAIN_SOURCE && buf === 0
+          ? { attribution: RADAR_ATTRIBUTION }
+          : {}),
+      });
+      map.addLayer({
+        id,
+        type: "raster",
+        source: id,
+        layout: { visibility: "visible" },
+        paint: {
+          "raster-opacity": opacity,
+          "raster-fade-duration": 0,
+        },
+      });
+      placeHeatmapUnderLakes(map, id);
+      radarTilesApplied.set(id, tiles[0] ?? "");
+      changed = true;
+      continue;
+    }
+    if (setRasterTiles(map, id, tiles)) changed = true;
+    setRadarVisibility(map, id, true);
+    setRadarOpacity(map, id, opacity);
+  }
+  return changed;
+}
+
+function radarBufferReady(
+  map: MapLibreMap,
+  frame: RadarFrame,
+  buf: RadarBuf,
+): boolean {
+  return frame.layers.every(({ sourceId }) => {
+    const id = bufferedRadarId(sourceId, buf);
+    return !!map.getSource(id) && map.isSourceLoaded(id);
+  });
+}
+
+function showRadarBuffer(map: MapLibreMap, frame: RadarFrame, buf: RadarBuf): void {
+  const hide: RadarBuf = buf === 0 ? 1 : 0;
+  for (const { sourceId } of frame.layers) {
+    const showId = bufferedRadarId(sourceId, buf);
+    const hideId = bufferedRadarId(sourceId, hide);
+    setRadarVisibility(map, showId, true);
+    setRadarOpacity(map, showId, RADAR_OPACITY);
+    setRadarOpacity(map, hideId, 0);
+  }
+}
+
+function swapRadarBufferWhenReady(
+  map: MapLibreMap,
+  frame: RadarFrame,
+  back: RadarBuf,
+  key: string,
+): void {
+  radarLoadGen += 1;
+  const gen = radarLoadGen;
+  detachRadarLoadHandler(map);
+  const reveal = () => {
+    if (gen !== radarLoadGen) return false;
+    if (!radarBufferReady(map, frame, back)) return false;
+    showRadarBuffer(map, frame, back);
+    radarFront = back;
+    radarAppliedKey = key;
+    detachRadarLoadHandler(map);
+    map.triggerRepaint();
+    return true;
+  };
+  if (reveal()) return;
+  radarSourceDataHandler = () => {
+    reveal();
+  };
+  map.on("sourcedata", radarSourceDataHandler);
+  map.once("idle", reveal);
 }
 
 /** Live ECCC radar above heatmaps, under lake outlines. Independent of overlay. */
 function ensureRadarLayers(map: MapLibreMap, frame: RadarFrame): void {
   const visible = frame.kind !== "none" && !!frame.timeIso;
-  for (const { sourceId, wmsLayer } of frame.layers) {
-    if (!visible && !map.getSource(sourceId)) continue;
-    const tiles = [radarTileUrl(wmsLayer, frame.timeIso)];
-    if (!map.getSource(sourceId)) {
-      map.addSource(sourceId, {
-        type: "raster",
-        tiles,
-        tileSize: 256,
-        ...(sourceId === RADAR_RAIN_SOURCE
-          ? { attribution: RADAR_ATTRIBUTION }
-          : {}),
-      });
-      map.addLayer({
-        id: sourceId,
-        type: "raster",
-        source: sourceId,
-        layout: { visibility: visible ? "visible" : "none" },
-        paint: {
-          "raster-opacity": 0.82,
-          "raster-fade-duration": 0,
-        },
-      });
-      placeHeatmapUnderLakes(map, sourceId);
-      continue;
-    }
-    if (visible) setRasterTiles(map, sourceId, tiles);
-    if (map.getLayer(sourceId)) {
-      map.setLayoutProperty(
-        sourceId,
-        "visibility",
-        visible ? "visible" : "none",
-      );
-    }
+  const key = radarFrameKey(frame, visible);
+  const frontRain = bufferedRadarId(RADAR_RAIN_SOURCE, radarFront);
+  if (
+    key === radarAppliedKey &&
+    map.getSource(frontRain) &&
+    map.getLayer(frontRain)
+  ) {
+    return;
   }
-  map.triggerRepaint();
+  if (!visible) {
+    detachRadarLoadHandler(map);
+    hideRadarLayers(map);
+    radarAppliedKey = key;
+    return;
+  }
+  const frontExists = !!map.getSource(bufferedRadarId(RADAR_RAIN_SOURCE, 0));
+  if (!frontExists) {
+    ensureRadarBuffer(map, 0, frame, true);
+    radarFront = 0;
+    radarAppliedKey = key;
+    map.triggerRepaint();
+    return;
+  }
+  const back: RadarBuf = radarFront === 0 ? 1 : 0;
+  ensureRadarBuffer(map, back, frame, false);
+  swapRadarBufferWhenReady(map, frame, back, key);
 }
 
 function hideRadarLayers(map: MapLibreMap): void {
-  for (const { sourceId } of RADAR_OBS_LAYERS) {
-    if (map.getLayer(sourceId)) {
-      map.setLayoutProperty(sourceId, "visibility", "none");
-    }
+  for (const id of allRadarLayerIds()) {
+    setRadarOpacity(map, id, 0);
+    setRadarVisibility(map, id, false);
   }
 }
 
 function removeRadarLayers(map: MapLibreMap): void {
-  for (const { sourceId } of [...RADAR_OBS_LAYERS].reverse()) {
-    if (map.getLayer(sourceId)) map.removeLayer(sourceId);
-    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  detachRadarLoadHandler(map);
+  for (const id of [...allRadarLayerIds()].reverse()) {
+    if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource(id)) map.removeSource(id);
+    radarTilesApplied.delete(id);
   }
+  radarFront = 0;
+  radarAppliedKey = "";
+  radarLoadGen += 1;
 }
 
 /** MapLibre canvas sources skip prepare() until a covering tile exists; poke after paint. */
@@ -1244,6 +1368,8 @@ export function MapView({
   selectedTime = null,
   radarFollowLive = false,
   clockMode = "forecast",
+  radarOn = false,
+  radarWindows = null,
   forecastPoint = null,
   gpxTrack = null,
   gpxCursor = null,
@@ -1257,7 +1383,9 @@ export function MapView({
   windFieldStatus = "idle",
   tempSlice = null,
   tempFieldStatus = "idle",
-  onOverlayChange,
+  overlay,
+  basemap,
+  windGlyph,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -1299,12 +1427,6 @@ export function MapView({
   forecastPointRef.current = forecastPoint;
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
-  const [basemap, setBasemap] = useState<BasemapId>(() =>
-    typeof window !== "undefined" ? loadBasemap() : "topo",
-  );
-  const [overlay, setOverlay] = useState<OverlayId>(() =>
-    typeof window !== "undefined" ? loadOverlay() : "wind",
-  );
   const [legendHoverT, setLegendHoverT] = useState<number | null>(null);
   const [radarLegendHoverT, setRadarLegendHoverT] = useState<number | null>(
     null,
@@ -1312,27 +1434,24 @@ export function MapView({
   const [legendTipOpen, setLegendTipOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const layersRef = useRef<HTMLDivElement>(null);
-  const [windGlyph, setWindGlyph] = useState<WindGlyphId>(() =>
-    typeof window !== "undefined" ? loadWindGlyph() : "particles",
-  );
   const [heatmapStyle, setHeatmapStyle] = useState<HeatmapStyle>(() =>
     typeof window !== "undefined" ? loadHeatmapStyle() : "blend",
-  );
-  const [radarOn, setRadarOn] = useState(() =>
-    typeof window !== "undefined" ? loadRadar() : false,
   );
   const [radarFrame, setRadarFrame] = useState<RadarFrame>(() =>
     resolveRadarFrame(null, null),
   );
-  const radarWindowsRef = useRef<RadarWindows | null>(null);
   const [fieldHeatmapReady, setFieldHeatmapReady] = useState(false);
   const overlayRef = useRef(overlay);
+  const basemapRef = useRef(basemap);
+  const radarOnRef = useRef(radarOn);
   const windGlyphRef = useRef(windGlyph);
   const heatmapStyleRef = useRef(heatmapStyle);
   const windSliceRef = useRef(windSlice);
   const tempSliceRef = useRef(tempSlice);
   const simulatingRef = useRef(simulating);
   overlayRef.current = overlay;
+  basemapRef.current = basemap;
+  radarOnRef.current = radarOn;
   windGlyphRef.current = windGlyph;
   heatmapStyleRef.current = heatmapStyle;
   windSliceRef.current = windSlice;
@@ -1340,17 +1459,20 @@ export function MapView({
   simulatingRef.current = simulating;
 
   useEffect(() => {
-    onOverlayChange?.(overlay);
     setLegendHoverT(null);
     setLegendTipOpen(false);
-  }, [overlay, onOverlayChange]);
+  }, [overlay, radarOn]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     if (!radarOn) {
       removeRadarLayers(map);
-      radarWindowsRef.current = null;
+      setRadarFrame(resolveRadarFrame(null, null));
+      return;
+    }
+    if (clockMode === "sim") {
+      hideRadarLayers(map);
       setRadarFrame(resolveRadarFrame(null, null));
       return;
     }
@@ -1359,63 +1481,21 @@ export function MapView({
       const t = Date.parse(selectedTime);
       return Number.isFinite(t) ? t : null;
     })();
-    const apply = (windows: RadarWindows | null) => {
-      const live = mapRef.current;
-      if (!live) return;
-      if (clockMode === "sim") {
-        hideRadarLayers(live);
-        setRadarFrame(resolveRadarFrame(null, null));
-        return;
-      }
-      const frame = resolveRadarFrame(
-        selectedMs,
-        windows,
-        radarFollowLive && clockMode === "forecast",
-      );
-      ensureRadarLayers(live, frame);
-      setRadarFrame(frame);
-    };
-    if (clockMode === "sim") {
-      apply(null);
-      return;
-    }
-    if (radarWindowsRef.current) apply(radarWindowsRef.current);
-    let cancelled = false;
-    const sync = async () => {
-      try {
-        const windows = await fetchRadarWindows();
-        if (cancelled) return;
-        radarWindowsRef.current = windows;
-        apply(windows);
-      } catch (err) {
-        console.error("Radar time failed", err);
-        if (cancelled) return;
-        apply(radarWindowsRef.current);
-      }
-    };
-    void sync();
-    const id = window.setInterval(() => void sync(), RADAR_POLL_MS);
-    const onVis = () => {
-      if (document.visibilityState === "visible") void sync();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, [radarOn, ready, selectedTime, radarFollowLive, clockMode]);
+    const frame = resolveRadarFrame(selectedMs, radarWindows, radarFollowLive);
+    ensureRadarLayers(map, frame);
+    setRadarFrame(frame);
+  }, [radarOn, ready, selectedTime, radarFollowLive, clockMode, radarWindows]);
 
   gridsRef.current = grids;
   shorelineRef.current = shoreline;
 
   const hs = useMemo(() => {
-    if (!wind || overlay !== "waves") return null;
+    if (radarOn || !wind || overlay !== "waves") return null;
     if (windSlice && !windSlice.uniform) {
       return computeHsGridFromWind(grids, windSlice, durationSec);
     }
     return computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg, durationSec);
-  }, [grids, wind, overlay, windSlice, durationSec]);
+  }, [grids, wind, overlay, windSlice, durationSec, radarOn]);
 
   hsRef.current = hs;
   windRef.current = wind;
@@ -1437,7 +1517,7 @@ export function MapView({
     const { meta } = grids;
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: makeStyle(loadBasemap()),
+      style: makeStyle(basemap),
       center: [spot.identity.longitude, spot.identity.latitude],
       zoom: 11.2,
       bearing: 0,
@@ -1590,7 +1670,7 @@ export function MapView({
         id: "hs-layer",
         type: "raster",
         source: "hs",
-        layout: { visibility: showsFieldHeatmap(overlay) ? "none" : "visible" },
+        layout: { visibility: showsFieldHeatmap(overlay, radarOn) ? "none" : "visible" },
         paint: {
           "raster-opacity": 0.92,
           "raster-resampling": heatmapStyle === "edges" ? "nearest" : "linear",
@@ -1614,7 +1694,7 @@ export function MapView({
         id: "wind-field",
         type: "raster",
         source: "wind-field",
-        layout: { visibility: showsFieldHeatmap(overlay) ? "visible" : "none" },
+        layout: { visibility: showsFieldHeatmap(overlay, radarOn) ? "visible" : "none" },
         paint: {
           "raster-opacity": 1,
           "raster-resampling": heatmapStyle === "edges" ? "nearest" : "linear",
@@ -1881,7 +1961,7 @@ export function MapView({
         },
       });
 
-      applyBasemap(map, loadBasemap(), selectedLakeIdRef.current);
+      applyBasemap(map, basemapRef.current, selectedLakeIdRef.current);
       const overview = allShorelinesRef.current;
       if (overview && overview.features.length > 0) {
         viewModeRef.current = "all";
@@ -1932,7 +2012,7 @@ export function MapView({
         hoverFromMapEvent(
           e,
           gridsRef.current,
-          overlayRef.current,
+          radarOnRef.current ? "wind" : overlayRef.current,
           simulatingRef.current,
           windSliceRef.current,
           heatmapStyleRef.current,
@@ -1979,7 +2059,7 @@ export function MapView({
       const info = hoverFromMapEvent(
         e,
         g,
-        overlayRef.current,
+        radarOnRef.current ? "wind" : overlayRef.current,
         simulatingRef.current,
         windSliceRef.current,
         heatmapStyleRef.current,
@@ -2187,7 +2267,6 @@ export function MapView({
     const map = mapRef.current;
     if (!map || !ready) return;
     applyBasemap(map, basemap, selectedLakeId);
-    saveBasemap(basemap);
   }, [basemap, ready, selectedLakeId]);
 
   // Draw upwind fetch ray from hover point to shoreline
@@ -2221,11 +2300,11 @@ export function MapView({
       canvas.width = size.width;
       canvas.height = size.height;
     }
-    if (spot.spotId !== selectedLakeId || showsFieldHeatmap(overlay)) {
+    if (spot.spotId !== selectedLakeId || showsFieldHeatmap(overlay, radarOn)) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
-    if (overlay !== "waves" && overlay !== "depth") {
+    if (radarOn || (overlay !== "waves" && overlay !== "depth")) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
@@ -2253,7 +2332,7 @@ export function MapView({
       mask,
       heatmapStyle === "blend",
     );
-  }, [hs, overlay, ready, grids, vmax, depthMaxM, spot.spotId, selectedLakeId, heatmapStyle]);
+  }, [hs, overlay, ready, grids, vmax, depthMaxM, spot.spotId, selectedLakeId, heatmapStyle, radarOn]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2261,28 +2340,30 @@ export function MapView({
     const src = map.getSource("depth-contours") as GeoJSONSource | undefined;
     if (!src) return;
     src.setData(
-      overlay === "depth" && depthContours ? depthContours : EMPTY_FC,
+      !radarOn && overlay === "depth" && depthContours ? depthContours : EMPTY_FC,
     );
     const vis =
-      overlay === "depth" && spot.spotId === selectedLakeId ? "visible" : "none";
+      !radarOn && overlay === "depth" && spot.spotId === selectedLakeId
+        ? "visible"
+        : "none";
     if (map.getLayer("depth-contours")) {
       map.setLayoutProperty("depth-contours", "visibility", vis);
     }
     if (map.getLayer("depth-contour-labels")) {
       map.setLayoutProperty("depth-contour-labels", "visibility", vis);
     }
-  }, [overlay, depthContours, ready, spot.spotId, selectedLakeId]);
+  }, [overlay, depthContours, ready, spot.spotId, selectedLakeId, radarOn]);
 
   useEffect(() => {
     setFieldHeatmapReady(false);
-  }, [overlay]);
+  }, [overlay, radarOn]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const showHeatmap = showsFieldHeatmap(overlay);
-    const showGlyphs = showsWindGlyphs(overlay);
-    const showHs = !showHeatmap && spot.spotId === selectedLakeId;
+    const showHeatmap = showsFieldHeatmap(overlay, radarOn);
+    const showGlyphs = showsWindGlyphs(overlay, radarOn);
+    const showHs = !radarOn && !showHeatmap && spot.spotId === selectedLakeId;
     if (map.getLayer("hs-layer")) {
       map.setLayoutProperty("hs-layer", "visibility", showHs ? "visible" : "none");
       map.setPaintProperty(
@@ -2312,7 +2393,7 @@ export function MapView({
     if (map.getLayer("lakes-all-line")) map.moveLayer("lakes-all-line");
     if (map.getLayer("lakes-labels")) map.moveLayer("lakes-labels");
     if (showGlyphs && map.getLayer("wind-arrows")) map.moveLayer("wind-arrows");
-  }, [overlay, ready, spot.spotId, selectedLakeId, windGlyph, heatmapStyle]);
+  }, [overlay, ready, spot.spotId, selectedLakeId, windGlyph, heatmapStyle, radarOn]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2334,14 +2415,19 @@ export function MapView({
       });
     };
     const apply = () => {
+      const radarNow = radarOnRef.current;
+      if (radarNow) {
+        setFieldHeatmapReady(true);
+        return;
+      }
       const slice = spatialWindSlice(
         windSliceRef.current,
         simulatingRef.current,
       );
       const overlayNow = overlayRef.current;
-      const showWindHeat = showsWindHeatmap(overlayNow);
-      const showTempHeat = showsTempHeatmap(overlayNow);
-      const showGlyphs = showsWindGlyphs(overlayNow);
+      const showWindHeat = showsWindHeatmap(overlayNow, radarNow);
+      const showTempHeat = showsTempHeatmap(overlayNow, radarNow);
+      const showGlyphs = showsWindGlyphs(overlayNow, radarNow);
       const tempNow = simulatingRef.current
         ? null
         : (tempSliceRef.current ?? null);
@@ -2385,13 +2471,13 @@ export function MapView({
       window.cancelAnimationFrame(raf);
       map.off("zoomend", applyArrows);
     };
-  }, [overlay, windSlice, tempSlice, ready, simulating, windGlyph, heatmapStyle]);
+  }, [overlay, windSlice, tempSlice, ready, simulating, windGlyph, heatmapStyle, radarOn]);
 
   useEffect(() => {
     const map = mapRef.current;
     const canvas = windParticleCanvasRef.current;
     if (!map || !ready || !canvas) return;
-    if (!showsWindGlyphs(overlay) || windGlyph !== "particles") {
+    if (!showsWindGlyphs(overlay, radarOn) || windGlyph !== "particles") {
       clearParticleCanvas(canvas);
       windParticlesRef.current = createParticleField();
       return;
@@ -2451,13 +2537,13 @@ export function MapView({
       map.off("zoomend", onZoomEnd);
       clearParticleCanvas(canvas);
     };
-  }, [overlay, ready, windGlyph]);
+  }, [overlay, ready, windGlyph, radarOn]);
 
   useEffect(() => {
     const map = mapRef.current;
     const canvas = windParticleCanvasRef.current;
     if (!map || !ready || !canvas) return;
-    if (!showsWindGlyphs(overlay) || windGlyph !== "arrows") {
+    if (!showsWindGlyphs(overlay, radarOn) || windGlyph !== "arrows") {
       arrowLayoutRef.current = null;
       return;
     }
@@ -2495,7 +2581,7 @@ export function MapView({
       map.off("resize", paint);
       map.off("zoomend", onZoomEnd);
     };
-  }, [overlay, ready, windGlyph, windSlice, simulating]);
+  }, [overlay, ready, windGlyph, windSlice, simulating, radarOn]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2642,6 +2728,13 @@ export function MapView({
   }, [layersOpen]);
 
   const legendNotes = useMemo(() => {
+    if (radarOn) {
+      return [
+        formatRadarLegend(radarFrame) ?? "Loading radar…",
+        "Radar colors are ECCC precip rate (rain mm/h, snow cm/h).",
+        "Wind arrows follow the nearest hourly GEM field.",
+      ];
+    }
     const source =
       overlay === "depth"
         ? `Shallow (light) to deep (dark). ${depthIntervalM} m contours.`
@@ -2678,13 +2771,7 @@ export function MapView({
         : forecastPoint
           ? null
           : "Click the lake to pin a forecast spot.";
-    const radar = radarOn ? formatRadarLegend(radarFrame) : null;
-    const radarScale = radarOn
-      ? "Radar colors are ECCC precip rate (rain mm/h, snow cm/h)."
-      : null;
-    return [source, hint, radar, radarScale].filter(
-      (line): line is string => !!line,
-    );
+    return [source, hint].filter((line): line is string => !!line);
   }, [
     overlay,
     depthIntervalM,
@@ -2714,8 +2801,9 @@ export function MapView({
         ? tempFieldStatus === "loading" || tempFieldStatus === "idle"
         : false;
   const heatmapLoading =
+    !radarOn &&
     !simulating &&
-    showsFieldHeatmap(overlay) &&
+    showsFieldHeatmap(overlay, radarOn) &&
     (fieldStatusPending || !ready || (fieldSliceReady && !fieldHeatmapReady));
   const heatmapLoadingLabel =
     overlay === "temp" ? "Loading temperature field…" : "Loading wind field…";
@@ -2726,7 +2814,7 @@ export function MapView({
       <canvas
         ref={windParticleCanvasRef}
         className={
-          showsWindGlyphs(overlay) ? "wind-particles is-on" : "wind-particles"
+          showsWindGlyphs(overlay, radarOn) ? "wind-particles is-on" : "wind-particles"
         }
         aria-hidden="true"
       />
@@ -2741,6 +2829,7 @@ export function MapView({
           {heatmapLoadingLabel}
         </div>
       ) : null}
+      {showsFieldHeatmap(overlay, radarOn) ? (
       <div className="map-layers-wrap" ref={layersRef}>
         <button
           type="button"
@@ -2755,67 +2844,6 @@ export function MapView({
           id="map-layers"
           className={`map-layers${layersOpen ? " is-open" : ""}`}
         >
-      <div className="basemap-toggle overlay-toggle" role="group" aria-label="Map overlay">
-        <button
-          type="button"
-          className={overlay === "wind" ? "is-on" : ""}
-          aria-pressed={overlay === "wind"}
-          onClick={() => {
-            setOverlay("wind");
-            saveOverlay("wind");
-          }}
-        >
-          Wind
-        </button>
-        <button
-          type="button"
-          className={overlay === "waves" ? "is-on" : ""}
-          aria-pressed={overlay === "waves"}
-          onClick={() => {
-            setOverlay("waves");
-            saveOverlay("waves");
-          }}
-        >
-          Waves
-        </button>
-        <button
-          type="button"
-          className={overlay === "temp" ? "is-on" : ""}
-          aria-pressed={overlay === "temp"}
-          onClick={() => {
-            setOverlay("temp");
-            saveOverlay("temp");
-          }}
-        >
-          Temp
-        </button>
-        <button
-          type="button"
-          className={overlay === "depth" ? "is-on" : ""}
-          aria-pressed={overlay === "depth"}
-          onClick={() => {
-            setOverlay("depth");
-            saveOverlay("depth");
-          }}
-        >
-          Depth
-        </button>
-      </div>
-      <div className="basemap-toggle radar-toggle" role="group" aria-label="Weather radar">
-        <button
-          type="button"
-          className={radarOn ? "is-on" : ""}
-          aria-pressed={radarOn}
-          onClick={() => {
-            const next = !radarOn;
-            setRadarOn(next);
-            saveRadar(next);
-          }}
-        >
-          Radar
-        </button>
-      </div>
-      {showsFieldHeatmap(overlay) ? (
         <div className="basemap-toggle heatmap-style-toggle" role="group" aria-label="Heatmap style">
           <button
             type="button"
@@ -2840,156 +2868,30 @@ export function MapView({
             Edges
           </button>
         </div>
-      ) : null}
-      {showsWindGlyphs(overlay) ? (
-        <div
-          className={
-            showsFieldHeatmap(overlay)
-              ? "basemap-toggle wind-glyph-toggle"
-              : "basemap-toggle wind-glyph-toggle is-up"
-          }
-          role="group"
-          aria-label="Wind glyphs"
-        >
-          <button
-            type="button"
-            className={windGlyph === "arrows" ? "is-on" : ""}
-            aria-pressed={windGlyph === "arrows"}
-            onClick={() => {
-              setWindGlyph("arrows");
-              saveWindGlyph("arrows");
-            }}
-          >
-            Arrows
-          </button>
-          <button
-            type="button"
-            className={windGlyph === "particles" ? "is-on" : ""}
-            aria-pressed={windGlyph === "particles"}
-            onClick={() => {
-              setWindGlyph("particles");
-              saveWindGlyph("particles");
-            }}
-          >
-            Particles
-          </button>
-        </div>
-      ) : null}
-      <div className="basemap-toggle" role="group" aria-label="Basemap">
-        <button
-          type="button"
-          className={basemap === "topo" ? "is-on" : ""}
-          aria-pressed={basemap === "topo"}
-          onClick={() => setBasemap("topo")}
-        >
-          Topo
-        </button>
-        <button
-          type="button"
-          className={basemap === "map" ? "is-on" : ""}
-          aria-pressed={basemap === "map"}
-          onClick={() => setBasemap("map")}
-        >
-          Map
-        </button>
-        <button
-          type="button"
-          className={basemap === "satellite" ? "is-on" : ""}
-          aria-pressed={basemap === "satellite"}
-          onClick={() => setBasemap("satellite")}
-        >
-          Satellite
-        </button>
-      </div>
         </div>
       </div>
+      ) : null}
       <div className="legend">
-        <div className="legend-title">
-          <span>
-            {overlay === "depth"
-              ? `Depth (${legendUnit(overlay, units)})`
-              : overlay === "wind"
-                ? `Wind speed (${legendUnit(overlay, units)})`
-                : overlay === "temp"
-                  ? `Temperature (${legendUnit(overlay, units)})`
-                  : `Wave height (${legendUnit(overlay, units)})`}
-          </span>
-          <button
-            type="button"
-            className={`legend-info${legendTipOpen ? " is-open" : ""}`}
-            aria-label={legendNotes.join(" ")}
-            aria-expanded={legendTipOpen}
-            onClick={() => setLegendTipOpen((open) => !open)}
-          >
-            <span className="legend-info-mark" aria-hidden>
-              i
-            </span>
-            <span className="legend-info-tip" role="tooltip">
-              {legendNotes.map((line) => (
-                <span key={line}>{line}</span>
-              ))}
-            </span>
-          </button>
-        </div>
-        <div
-          className="legend-bar-hit"
-          onPointerMove={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            if (rect.width <= 0) return;
-            setLegendHoverT(
-              Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
-            );
-          }}
-          onPointerLeave={() => setLegendHoverT(null)}
-        >
-          <div
-            className="legend-bar"
-            style={{
-              background: scaleGradientCss(legendScale(overlay)),
-            }}
-          />
-          {legendHoverT != null && (
-            <>
-              <span
-                className="legend-bar-marker"
-                style={{ left: `${legendHoverT * 100}%` }}
-              />
-              <span
-                className={`legend-bar-readout${
-                  legendHoverT < 0.12
-                    ? " is-start"
-                    : legendHoverT > 0.88
-                      ? " is-end"
-                      : ""
-                }`}
-                style={{ left: `${legendHoverT * 100}%` }}
-              >
-                <span
-                  className="legend-bar-swatch"
-                  style={{
-                    background: `rgb(${sampleRgb(legendScale(overlay), legendHoverT).join(",")})`,
-                  }}
-                />
-                {formatLegendHover(
-                  overlay,
-                  legendMin + legendHoverT * (legendMax - legendMin),
-                  units,
-                )}
-              </span>
-            </>
-          )}
-        </div>
-        <div className="legend-scale">
-          {legendStops(legendMin, legendMax).map((value, i) => (
-            <span key={`${overlay}-${i}`}>
-              {formatLegendTick(overlay, value, units)}
-            </span>
-          ))}
-        </div>
         {radarOn ? (
-          <div className="legend-radar">
+          <>
             <div className="legend-title">
               <span>Radar (mm/h)</span>
+              <button
+                type="button"
+                className={`legend-info${legendTipOpen ? " is-open" : ""}`}
+                aria-label={legendNotes.join(" ")}
+                aria-expanded={legendTipOpen}
+                onClick={() => setLegendTipOpen((open) => !open)}
+              >
+                <span className="legend-info-mark" aria-hidden>
+                  i
+                </span>
+                <span className="legend-info-tip" role="tooltip">
+                  {legendNotes.map((line) => (
+                    <span key={line}>{line}</span>
+                  ))}
+                </span>
+              </button>
             </div>
             <div
               className="legend-bar-hit"
@@ -3041,8 +2943,93 @@ export function MapView({
                 <span key={rate}>{formatRadarTick(rate)}</span>
               ))}
             </div>
-          </div>
-        ) : null}
+          </>
+        ) : (
+          <>
+            <div className="legend-title">
+              <span>
+                {overlay === "depth"
+                  ? `Depth (${legendUnit(overlay, units)})`
+                  : overlay === "wind"
+                    ? `Wind speed (${legendUnit(overlay, units)})`
+                    : overlay === "temp"
+                      ? `Temperature (${legendUnit(overlay, units)})`
+                      : `Wave height (${legendUnit(overlay, units)})`}
+              </span>
+              <button
+                type="button"
+                className={`legend-info${legendTipOpen ? " is-open" : ""}`}
+                aria-label={legendNotes.join(" ")}
+                aria-expanded={legendTipOpen}
+                onClick={() => setLegendTipOpen((open) => !open)}
+              >
+                <span className="legend-info-mark" aria-hidden>
+                  i
+                </span>
+                <span className="legend-info-tip" role="tooltip">
+                  {legendNotes.map((line) => (
+                    <span key={line}>{line}</span>
+                  ))}
+                </span>
+              </button>
+            </div>
+            <div
+              className="legend-bar-hit"
+              onPointerMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (rect.width <= 0) return;
+                setLegendHoverT(
+                  Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+                );
+              }}
+              onPointerLeave={() => setLegendHoverT(null)}
+            >
+              <div
+                className="legend-bar"
+                style={{
+                  background: scaleGradientCss(legendScale(overlay)),
+                }}
+              />
+              {legendHoverT != null && (
+                <>
+                  <span
+                    className="legend-bar-marker"
+                    style={{ left: `${legendHoverT * 100}%` }}
+                  />
+                  <span
+                    className={`legend-bar-readout${
+                      legendHoverT < 0.12
+                        ? " is-start"
+                        : legendHoverT > 0.88
+                          ? " is-end"
+                          : ""
+                    }`}
+                    style={{ left: `${legendHoverT * 100}%` }}
+                  >
+                    <span
+                      className="legend-bar-swatch"
+                      style={{
+                        background: `rgb(${sampleRgb(legendScale(overlay), legendHoverT).join(",")})`,
+                      }}
+                    />
+                    {formatLegendHover(
+                      overlay,
+                      legendMin + legendHoverT * (legendMax - legendMin),
+                      units,
+                    )}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="legend-scale">
+              {legendStops(legendMin, legendMax).map((value, i) => (
+                <span key={`${overlay}-${i}`}>
+                  {formatLegendTick(overlay, value, units)}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
         {forecastPoint ? (
           <button type="button" className="legend-pin-btn" onClick={() => onClearPoint?.()}>
             Pinned spot · Clear
@@ -3057,7 +3044,7 @@ export function MapView({
             top: Math.max(8, hover.y - 8),
           }}
         >
-          {overlay === "temp" ? (
+          {overlay === "temp" && !radarOn ? (
             <>
               <div className="hover-primary">
                 {hover.tempC != null && Number.isFinite(hover.tempC)

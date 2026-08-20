@@ -460,6 +460,51 @@
   width: 100%;
 }
 
+.bottombar-trailing {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+}
+
+.overlay-nav {
+  display: flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.overlay-nav button {
+  border: none;
+  background: transparent;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.overlay-nav button + button {
+  border-left: 1px solid var(--line);
+}
+
+.overlay-nav button.is-on {
+  color: var(--accent);
+  background: rgba(31, 111, 120, 0.1);
+}
+
+.overlay-nav button.overlay-nav-radar {
+  color: #4a6d8c;
+}
+
+.overlay-nav button.overlay-nav-radar.is-on {
+  color: #2c5a82;
+  background: rgba(44, 90, 130, 0.12);
+}
+
 .readout {
   display: flex;
   flex-wrap: wrap;
@@ -613,7 +658,6 @@
   display: flex;
   flex: 0 0 auto;
   overflow: hidden;
-  margin-left: auto;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -862,6 +906,41 @@
 
 .forecast-time-axis {
   display: block;
+}
+
+.radar-precip-bar {
+  stroke: none;
+  pointer-events: none;
+}
+
+.radar-precip-bar.is-nowcast {
+  opacity: 0.55;
+}
+
+.radar-precip-bar.is-pending {
+  fill: rgba(28, 36, 32, 0.22);
+  animation: radar-precip-pending 1.15s ease-in-out infinite;
+}
+
+.radar-precip-bar.is-pending.is-nowcast {
+  opacity: 1;
+}
+
+@keyframes radar-precip-pending {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-precip-bar.is-pending {
+    animation: none;
+    opacity: 0.4;
+  }
 }
 
 .weather-strip-svg {
@@ -1178,30 +1257,6 @@
   background: rgba(31, 111, 120, 0.1);
 }
 
-.overlay-toggle {
-  top: 3.05rem;
-}
-
-.radar-toggle {
-  top: 5.35rem;
-}
-
-.heatmap-style-toggle {
-  top: 7.65rem;
-}
-
-.wind-glyph-toggle {
-  top: 9.95rem;
-}
-
-.wind-glyph-toggle.is-up {
-  top: 7.65rem;
-}
-
-.overlay-toggle button {
-  padding: 0.38rem 0.55rem;
-}
-
 .wind-particles {
   position: absolute;
   inset: 0;
@@ -1276,28 +1331,6 @@
 
 .sim-panel-toggle {
   display: none;
-}
-
-.sim-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-}
-
-.sim-tabs button {
-  border: none;
-  background: transparent;
-  padding: 0.45rem 0.2rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-  border-bottom: 1px solid var(--line);
-}
-
-.sim-tabs button.is-on {
-  color: var(--accent);
-  background: rgba(31, 111, 120, 0.08);
-  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .sim-body {
@@ -1816,6 +1849,91 @@
   background: rgba(31, 111, 120, 0.1);
 }
 
+.mode-nav {
+  display: flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.mode-nav button {
+  border: none;
+  background: transparent;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mode-nav button + button {
+  border-left: 1px solid var(--line);
+}
+
+.mode-nav button.is-on {
+  color: var(--accent);
+  background: rgba(31, 111, 120, 0.1);
+}
+
+.basemap-nav {
+  display: flex;
+  flex: 0 0 auto;
+  margin-left: auto;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.basemap-nav button {
+  border: none;
+  background: transparent;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.basemap-nav button + button {
+  border-left: 1px solid var(--line);
+}
+
+.basemap-nav button.is-on {
+  color: var(--accent);
+  background: rgba(31, 111, 120, 0.1);
+}
+
+.glyph-nav {
+  display: flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.glyph-nav button {
+  border: none;
+  background: transparent;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.glyph-nav button + button {
+  border-left: 1px solid var(--line);
+}
+
+.glyph-nav button.is-on {
+  color: var(--accent);
+  background: rgba(31, 111, 120, 0.1);
+}
+
 .compare-app {
   grid-template-rows: auto 1fr;
 }
@@ -2235,6 +2353,21 @@
     align-items: center;
   }
 
+  .mode-nav button {
+    padding: 0.55rem 0.55rem;
+    min-height: 44px;
+  }
+
+  .basemap-nav button {
+    padding: 0.55rem 0.55rem;
+    min-height: 44px;
+  }
+
+  .glyph-nav button {
+    padding: 0.55rem 0.55rem;
+    min-height: 44px;
+  }
+
   .lake-picker {
     flex: 1 1 8rem;
     min-width: 0;
@@ -2427,11 +2560,6 @@
     display: block;
   }
 
-  .sim-tabs button {
-    min-height: 44px;
-    font-size: 0.72rem;
-  }
-
   .bottombar {
     padding: 0.4rem calc(0.65rem + var(--safe-right))
       calc(0.4rem + var(--safe-bottom)) calc(0.65rem + var(--safe-left));
@@ -2466,6 +2594,22 @@
   .range-toggle {
     margin-left: 0;
     width: 100%;
+  }
+
+  .bottombar-trailing {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .overlay-nav {
+    width: 100%;
+  }
+
+  .overlay-nav button {
+    flex: 1;
+    min-height: 44px;
+    padding: 0.4rem 0.3rem;
   }
 
   .range-toggle button {

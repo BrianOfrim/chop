@@ -13,7 +13,6 @@ import { MOBILE_MQ } from "../lib/mobile";
 
 type Props = {
   mode: WindMode;
-  onModeChange: (mode: WindMode) => void;
   speedMps: number;
   dirDeg: number;
   onSpeedMps: (mps: number) => void;
@@ -50,7 +49,6 @@ const MODE_LABELS: Record<WindMode, string> = {
 
 export function WindSimPanel({
   mode,
-  onModeChange,
   speedMps,
   dirDeg,
   onSpeedMps,
@@ -110,10 +108,12 @@ export function WindSimPanel({
     [onDirDeg],
   );
 
+  if (mode === "forecast") return null;
+
   return (
     <div
       ref={panelRef}
-      className={`sim-panel${mode !== "forecast" ? " is-on" : ""}${expanded ? " is-expanded" : ""}`}
+      className={`sim-panel is-on${expanded ? " is-expanded" : ""}`}
     >
       <button
         type="button"
@@ -128,28 +128,6 @@ export function WindSimPanel({
         </span>
       </button>
       <div id="sim-panel-sheet" className="sim-panel-sheet">
-      <div className="sim-tabs" role="tablist" aria-label="Wind source">
-        {(
-          [
-            ["forecast", "Forecast"],
-            ["history", "History"],
-            ["review", "Review"],
-            ["sim", "Sim"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={mode === id}
-            className={mode === id ? "is-on" : ""}
-            onClick={() => onModeChange(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
       {mode === "history" && (
         <div className="sim-body">
           <p className="sim-lead">
