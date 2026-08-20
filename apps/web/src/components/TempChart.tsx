@@ -28,24 +28,39 @@ type Props = {
   hourIndex: number;
   onSelectHour: (index: number) => void;
   tempUnit: TempUnit;
+  /** Hide the per-plot color ramp; stretch the series to the plot width. */
+  compact?: boolean;
+  /** Shared axis bounds in the active temperature unit. */
+  yMin?: number;
+  yMax?: number;
 };
 
 const W = CHART_W;
 const H = 78;
 const PAD = CHART_PAD;
 
-export function TempChart({ hours, hourIndex, onSelectHour, tempUnit }: Props) {
+export function TempChart({
+  hours,
+  hourIndex,
+  onSelectHour,
+  tempUnit,
+  compact = false,
+  yMin: yMinProp,
+  yMax: yMaxProp,
+}: Props) {
   const chart = useMemo(() => {
     const vals = hours.map((h) =>
       h.tempC != null && Number.isFinite(h.tempC) ? h.tempC : null,
     );
     const known = vals.filter((v): v is number => v != null);
     if (known.length === 0) return null;
-    const { min: yMin, max: yMax } = niceTempRange(
+    const local = niceTempRange(
       Math.min(...known),
       Math.max(...known),
       tempUnit,
     );
+    const yMin = yMinProp ?? local.min;
+    const yMax = yMaxProp ?? local.max;
     const innerH = H - PAD.top - PAD.bottom;
     const n = hours.length;
     const axis = buildTimeAxis(n);
@@ -82,7 +97,7 @@ export function TempChart({ hours, hourIndex, onSelectHour, tempUnit }: Props) {
       yMin,
       yMax,
     };
-  }, [hours, hourIndex, tempUnit]);
+  }, [hours, hourIndex, tempUnit, yMinProp, yMaxProp]);
 
   if (!chart) return null;
 
@@ -93,22 +108,24 @@ export function TempChart({ hours, hourIndex, onSelectHour, tempUnit }: Props) {
   return (
     <div className="wave-chart forecast-plot">
       <div className="forecast-plot-rail">
-        <ColorScaleLegend
-          orientation="vertical"
-          gradient={scaleGradientCss(DEFAULT_TEMP_SCALE, "vertical")}
-          labels={[
-            scaleLabel(TEMP_COLOR_MIN_C),
-            scaleLabel((TEMP_COLOR_MIN_C + TEMP_COLOR_MAX_C) / 2),
-            scaleLabel(TEMP_COLOR_MAX_C),
-          ]}
-          unit={tempUnitLabel(tempUnit)}
-        />
+        {!compact && (
+          <ColorScaleLegend
+            orientation="vertical"
+            gradient={scaleGradientCss(DEFAULT_TEMP_SCALE, "vertical")}
+            labels={[
+              scaleLabel(TEMP_COLOR_MIN_C),
+              scaleLabel((TEMP_COLOR_MIN_C + TEMP_COLOR_MAX_C) / 2),
+              scaleLabel(TEMP_COLOR_MAX_C),
+            ]}
+            unit={tempUnitLabel(tempUnit)}
+          />
+        )}
         <span className="forecast-plot-title">Temp</span>
       </div>
       <svg
         className="wind-chart-svg"
         viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="xMinYMid meet"
+        preserveAspectRatio={compact ? "none" : "xMinYMid meet"}
         role="img"
         aria-label="Temperature at 2 m over the forecast period"
         onClick={(e) => {

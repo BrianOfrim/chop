@@ -466,19 +466,40 @@
   display: inline-flex;
   align-items: center;
   padding: 0.05rem 0.4rem;
+  border: none;
   border-radius: 999px;
   background: rgba(168, 74, 18, 0.14);
   color: #8a3d10;
+  font: inherit;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  cursor: pointer;
+}
+
+.advisory-badge:hover,
+.advisory-badge[aria-expanded="true"] {
+  background: rgba(168, 74, 18, 0.22);
 }
 
 .advisory-unknown {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 0.15em;
+}
+
+.advisory-unknown:hover,
+.advisory-unknown[aria-expanded="true"] {
+  text-decoration-color: currentColor;
 }
 
 .lake-info-panel {
@@ -1029,12 +1050,13 @@
 .wind-chart-day-top {
   fill: var(--ink);
   font-size: 9px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .wind-chart-hour {
   fill: var(--ink);
   font-size: 8px;
+  font-weight: 500;
 }
 
 .wind-chart-bar {
@@ -1727,9 +1749,11 @@
 }
 
 .compare-main {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: auto;
-  padding: 1rem 1.25rem 1.5rem;
+  padding: 0.55rem 0.9rem 0.7rem;
 }
 
 .compare-toolbar {
@@ -1737,8 +1761,9 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.65rem 1rem;
-  margin-bottom: 0.85rem;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.45rem;
+  flex: none;
 }
 
 .compare-toolbar-controls {
@@ -1777,7 +1802,8 @@
 
 .compare-table-wrap {
   overflow-x: auto;
-  margin-top: 1.1rem;
+  margin-top: 0.55rem;
+  flex: none;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1786,8 +1812,46 @@
 
 .compare-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.compare-col-check {
+  width: 3.5%;
+}
+
+.compare-col-lake {
+  width: 15%;
+}
+
+.compare-col-wind {
+  width: 8%;
+}
+
+.compare-col-hs {
+  width: 8%;
+}
+
+.compare-col-temp {
+  width: 8.5%;
+}
+
+.compare-col-wx {
+  width: 18%;
+}
+
+.compare-col-peak-hs {
+  width: 15%;
+}
+
+.compare-col-peak-wind {
+  width: 18%;
+}
+
+.compare-col-map {
+  width: 5%;
 }
 
 .compare-table th {
@@ -1800,11 +1864,77 @@
   white-space: nowrap;
 }
 
+.compare-table th.is-sorted {
+  color: var(--ink);
+}
+
+.compare-table .compare-group-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  padding-bottom: 0.2rem;
+}
+
+.compare-table thead tr:first-child th {
+  border-bottom: none;
+  vertical-align: bottom;
+}
+
+.compare-table thead tr:last-child th {
+  padding-top: 0.2rem;
+}
+
+.compare-table .compare-at {
+  background: rgba(31, 111, 120, 0.1);
+}
+
+.compare-table .compare-peak {
+  background: rgba(180, 122, 48, 0.1);
+}
+
+.compare-table tbody tr.is-selected .compare-at {
+  background: rgba(31, 111, 120, 0.18);
+}
+
+.compare-table tbody tr.is-selected .compare-peak {
+  background: rgba(180, 122, 48, 0.16);
+}
+
+.compare-table .compare-group-start {
+  box-shadow: inset 1px 0 0 var(--line);
+}
+
+.compare-table th button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: -0.55rem -0.7rem;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compare-table th button:hover {
+  color: var(--ink);
+}
+
+.compare-sort-mark {
+  font-size: 0.65rem;
+  line-height: 1;
+}
+
 .compare-table td {
   padding: 0.48rem 0.7rem;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
   vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .compare-table tbody tr:last-child td {
@@ -1816,7 +1946,7 @@
 }
 
 .compare-table tbody tr.is-selected td:first-child {
-  box-shadow: inset 3px 0 0 var(--compare-color, var(--accent));
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .compare-check-col {
@@ -1829,8 +1959,9 @@
 }
 
 .compare-conditions {
-  max-width: 11rem;
-  white-space: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .compare-table .muted {
@@ -1843,8 +1974,9 @@
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 0.75rem 0.85rem 0.9rem;
+  padding: 0.35rem 0.55rem 0.4rem;
   box-shadow: 0 1px 2px rgba(28, 36, 32, 0.06);
+  flex: none;
 }
 
 .compare-chart-empty {
@@ -1855,47 +1987,156 @@
 .compare-charts {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.2rem;
 }
 
-.compare-readouts {
+.compare-scale-legends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  margin-bottom: 0.2rem;
+}
+
+.compare-scale-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 6.5rem;
+  flex: 1 1 6.5rem;
+  max-width: 14rem;
+}
+
+.compare-scale-legend-title {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.compare-scale-legend .color-scale-legend {
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+}
+
+.compare-lake-grid {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  margin-bottom: 0.55rem;
+  --compare-plot-h: 2.05rem;
+  --compare-wind-h: 2.4rem;
+  --compare-sky-h: 1.2rem;
 }
 
-.compare-readout {
+.compare-lake-grid[data-count="1"] {
+  --compare-plot-h: 4.4rem;
+  --compare-wind-h: 5.15rem;
+  --compare-sky-h: 2.55rem;
+}
+
+.compare-lake-grid[data-count="2"] {
+  --compare-plot-h: 3.4rem;
+  --compare-wind-h: 4rem;
+  --compare-sky-h: 2rem;
+}
+
+.compare-lake-grid[data-count="3"] {
+  --compare-plot-h: 2.55rem;
+  --compare-wind-h: 3rem;
+  --compare-sky-h: 1.5rem;
+}
+
+.compare-lake-panel {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.85rem;
-  font-size: 0.85rem;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  padding: 0.05rem 0 0.05rem 0.15rem;
 }
 
-.compare-readout-name {
+.compare-lake-heading {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
+  margin: 0;
+  font-size: 0.72rem;
   font-weight: 600;
-  min-width: 8.5rem;
+  line-height: 1.2;
 }
 
-.compare-readout .readout {
-  flex: 1 1 auto;
-  font-size: 0.85rem;
-  gap: 0.65rem;
+.compare-lake-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.12rem 0.45rem;
+  margin: 0 0 0.08rem;
+  font-size: 0.62rem;
+  color: var(--muted);
+  line-height: 1.25;
 }
 
-.compare-swatch {
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 3px;
-  flex: none;
+.compare-lake-readout .wx-readout.thunder {
+  color: #d45a12;
 }
 
-.compare-plot .forecast-plot-rail {
-  grid-template-columns: auto auto;
+.compare-lake-panel .forecast-plot {
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  column-gap: 0.2rem;
+}
+
+.compare-lake-panel .forecast-plot-rail {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.compare-lake-panel .forecast-plot-rail > span:not(.forecast-plot-title) {
+  display: none;
+}
+
+.compare-lake-panel .forecast-plot-title {
+  font-size: 0.58rem;
+}
+
+.compare-lake-panel .wind-chart-svg {
+  display: block;
+  width: 100%;
+  height: var(--compare-plot-h);
+}
+
+.compare-lake-panel .wind-chart .wind-chart-svg {
+  height: var(--compare-wind-h);
+}
+
+.compare-lake-panel .weather-strip-svg {
+  height: var(--compare-sky-h);
+}
+
+.compare-charts > .forecast-plot {
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  column-gap: 0.2rem;
+}
+
+.compare-charts .forecast-time-axis {
+  display: block;
+  width: 100%;
   height: auto;
-  align-self: center;
 }
+
+.compare-selected-time-row {
+  align-items: center;
+}
+
+.compare-selected-time {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.compare-charts .scrubber-row .now-btn {
+  font-size: 0.65rem;
+  padding: 0.08rem 0.35rem;
+}
+

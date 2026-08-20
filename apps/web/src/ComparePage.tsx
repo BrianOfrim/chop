@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Topbar } from "./components/Topbar";
 import { CompareCharts, type CompareSeries } from "./components/CompareChart";
 import {
   applyCompareRange,
-  compareColor,
-  COMPARE_SORT_OPTIONS,
   loadCompareForecasts,
   loadCompareMetas,
   loadEnabledLakes,
@@ -13,6 +11,7 @@ import {
   MAX_COMPARE_LAKES,
   saveSelectedCompareLakes,
   sortCompareRows,
+  snapshotAtTime,
   toggleSelectedLake,
   compareChartTimes,
   type CompareSort,
@@ -34,8 +33,8 @@ import {
   saveUnitPrefs,
   type UnitPrefs,
 } from "./lib/units";
-import { cardinalFromDeg, formatWind, nearestHourIndex } from "./lib/wind";
-import { formatWeatherHour, isThunder } from "./lib/weather";
+import { cardinalFromDeg, nearestHourIndex } from "./lib/wind";
+import { formatWeatherHour } from "./lib/weather";
 import { loadLakeId, saveLakeId } from "./lib/selectedLake";
 import { setAppView } from "./lib/view";
 import "./App.css";
@@ -44,6 +43,16 @@ function formatWhen(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString(undefined, {
     weekday: "short",
+    hour: "numeric",
+  });
+}
+
+function formatSelectedWhen(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
     hour: "numeric",
   });
 }
@@ -75,6 +84,39 @@ function formatConditions(
   precipMm: number | undefined,
 ): string {
   return formatWeatherHour(weatherCode, precipMm ?? 0);
+}
+
+function SortTh({
+  label,
+  value,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  value: CompareSort;
+  sort: CompareSort;
+  onSort: (value: CompareSort) => void;
+  className?: string;
+}) {
+  const active = sort === value;
+  return (
+    <th
+      className={[className, active ? "is-sorted" : undefined]
+        .filter(Boolean)
+        .join(" ")}
+      aria-sort={active ? "descending" : "none"}
+    >
+      <button type="button" onClick={() => onSort(value)}>
+        {label}
+        {active && (
+          <span className="compare-sort-mark" aria-hidden>
+            ▾
+          </span>
+        )}
+      </button>
+    </th>
+  );
 }
 
 export function ComparePage() {
@@ -153,16 +195,6 @@ export function ComparePage() {
     () => rows.map((row) => applyCompareRange(row, forecastRange)),
     [rows, forecastRange],
   );
-  const ranked = useMemo(
-    () => sortCompareRows(viewed, sort),
-    [viewed, sort],
-  );
-  const colorById = useMemo(() => {
-    const map = new Map<string, string>();
-    selected.forEach((id, i) => map.set(id, compareColor(i)));
-    return map;
-  }, [selected]);
-
   const chartSeries: CompareSeries[] = useMemo(
     () =>
       selected.flatMap((id) => {
@@ -172,18 +204,25 @@ export function ComparePage() {
           {
             id: row.meta.id,
             name: row.meta.name,
-            color: colorById.get(id) ?? compareColor(0),
             hours: row.hours,
             hsM: row.hsM,
           },
         ];
       }),
-    [selected, viewed, colorById],
+    [selected, viewed],
   );
 
   const chartTimes = useMemo(
     () => compareChartTimes(chartSeries),
     [chartSeries],
+  );
+  const selectedTime =
+    chartTimes.length > 0
+      ? chartTimes[Math.min(hourIndex, chartTimes.length - 1)]
+      : undefined;
+  const ranked = useMemo(
+    () => sortCompareRows(viewed, sort, selectedTime),
+    [viewed, sort, selectedTime],
   );
 
   useEffect(() => {
@@ -233,7 +272,6 @@ export function ComparePage() {
   }
 
   const readyCount = viewed.filter((r) => r.status === "ready").length;
-  const selectedTime = chartTimes[Math.min(hourIndex, Math.max(0, chartTimes.length - 1))];
 
   return (
     <div className="app compare-app">
@@ -251,18 +289,6 @@ export function ComparePage() {
             </span>
           </p>
           <div className="compare-toolbar-controls">
-            <div className="range-toggle" role="group" aria-label="Sort">
-              {COMPARE_SORT_OPTIONS.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  className={sort === o.value ? "is-on" : undefined}
-                  onClick={() => setSort(o.value)}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
             <div className="range-toggle" role="group" aria-label="Forecast range">
               {FORECAST_RANGE_OPTIONS.map((o) => (
                 <button
@@ -281,104 +307,100 @@ export function ComparePage() {
         <section className="compare-chart-panel" aria-label="Selected lake forecasts">
           {chartSeries.length === 0 ? (
             <p className="compare-chart-empty muted">
-              Select lakes in the table to overlay wind, wave, temperature, and sky.
+              Select lakes in the table to compare wind, wave, temperature, and sky.
             </p>
           ) : (
-            <>
-              <div className="compare-readouts" aria-label="Values at selected hour">
-                {chartSeries.map((s) => {
-                  const i = selectedTime
-                    ? s.hours.findIndex((h) => h.time === selectedTime)
-                    : -1;
-                  const hour = i >= 0 ? s.hours[i] : null;
-                  const hsM = i >= 0 ? (s.hsM[i] ?? null) : null;
-                  return (
-                    <div key={s.id} className="compare-readout">
-                      <span className="compare-readout-name">
-                        <span
-                          className="compare-swatch"
-                          style={{ background: s.color }}
-                        />
-                        {s.name}
-                      </span>
-                      {hour ? (
-                        <span className="readout">
-                          <span>
-                            {formatWind(
-                              hour.windSpeedMps,
-                              hour.windDirDeg,
-                              hour.gustMps,
-                              units.wind,
-                            )}
-                          </span>
-                          <span>max Hs {formatHs(hsM, units.wave)}</span>
-                          {hour.tempC != null && Number.isFinite(hour.tempC) && (
-                            <span>{formatTemp(hour.tempC, units.temp)}</span>
-                          )}
-                          <span
-                            className={
-                              isThunder(hour.weatherCode)
-                                ? "wx-readout thunder"
-                                : undefined
-                            }
-                          >
-                            {formatWeatherHour(hour.weatherCode, hour.precipMm)}
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="muted">No data at this hour</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <CompareCharts
-                series={chartSeries}
-                hourIndex={Math.min(hourIndex, Math.max(0, chartTimes.length - 1))}
-                onSelectHour={setHourIndex}
-                windUnit={units.wind}
-                waveUnit={units.wave}
-                tempUnit={units.temp}
-              />
-            </>
+            <CompareCharts
+              series={chartSeries}
+              hourIndex={Math.min(hourIndex, Math.max(0, chartTimes.length - 1))}
+              onSelectHour={setHourIndex}
+              windUnit={units.wind}
+              waveUnit={units.wave}
+              tempUnit={units.temp}
+            />
           )}
         </section>
 
         <div className="compare-table-wrap">
           <table className="compare-table">
+            <colgroup>
+              <col className="compare-col-check" />
+              <col className="compare-col-lake" />
+              <col className="compare-col-wind" />
+              <col className="compare-col-hs" />
+              <col className="compare-col-temp" />
+              <col className="compare-col-wx" />
+              <col className="compare-col-peak-hs" />
+              <col className="compare-col-peak-wind" />
+              <col className="compare-col-map" />
+            </colgroup>
             <thead>
               <tr>
-                <th className="compare-check-col">
+                <th rowSpan={2} className="compare-check-col">
                   <span className="visually-hidden">Compare</span>
                 </th>
-                <th>Lake</th>
-                <th>Now wind</th>
-                <th>Now Hs</th>
-                <th>Now temp</th>
-                <th>Conditions</th>
-                <th>Peak Hs</th>
-                <th>Peak wind</th>
-                <th>
+                <th rowSpan={2}>Lake</th>
+                <th colSpan={4} className="compare-at compare-group-label compare-group-start">
+                  {selectedTime ? formatSelectedWhen(selectedTime) : "Selected hour"}
+                </th>
+                <th colSpan={2} className="compare-peak compare-group-label compare-group-start">
+                  Peak
+                </th>
+                <th rowSpan={2}>
                   <span className="visually-hidden">Open on map</span>
                 </th>
+              </tr>
+              <tr>
+                <SortTh
+                  className="compare-at compare-group-start"
+                  label="Wind"
+                  value="wind"
+                  sort={sort}
+                  onSort={setSort}
+                />
+                <SortTh
+                  className="compare-at"
+                  label="Hs"
+                  value="hs"
+                  sort={sort}
+                  onSort={setSort}
+                />
+                <th className="compare-at">Temp</th>
+                <th className="compare-at">Conditions</th>
+                <SortTh
+                  className="compare-peak compare-group-start"
+                  label="Hs"
+                  value="peakHs"
+                  sort={sort}
+                  onSort={setSort}
+                />
+                <SortTh
+                  className="compare-peak"
+                  label="Wind"
+                  value="peakWind"
+                  sort={sort}
+                  onSort={setSort}
+                />
               </tr>
             </thead>
             <tbody>
               {ranked.map((row) => {
                 const on = selected.includes(row.meta.id);
-                const color = colorById.get(row.meta.id);
                 const disabled =
                   row.status !== "ready" ||
                   (!on && selected.length >= MAX_COMPARE_LAKES);
+                const at =
+                  row.status === "ready"
+                    ? snapshotAtTime(row, selectedTime)
+                    : null;
+                const conditions =
+                  row.status === "ready"
+                    ? formatConditions(at?.weatherCode, at?.precipMm)
+                    : "—";
                 return (
                   <tr
                     key={row.meta.id}
                     className={on ? "is-selected" : undefined}
-                    style={
-                      on && color
-                        ? ({ "--compare-color": color } as CSSProperties)
-                        : undefined
-                    }
                   >
                     <td className="compare-check-col">
                       <input
@@ -389,30 +411,35 @@ export function ComparePage() {
                         onChange={() => onToggleLake(row.meta.id)}
                       />
                     </td>
-                    <td className="compare-name">{row.meta.name}</td>
-                    <td>
+                    <td className="compare-name" title={row.meta.name}>
+                      {row.meta.name}
+                    </td>
+                    <td className="compare-at compare-group-start">
                       {row.status === "loading"
                         ? "…"
                         : row.status === "error"
                           ? "unavailable"
                           : formatWindNow(
-                              row.now?.windSpeedMps,
-                              row.now?.windDirDeg,
+                              at?.windSpeedMps,
+                              at?.windDirDeg,
                               units.wind,
                             )}
                     </td>
-                    <td>{row.status === "ready" ? formatHs(row.now?.hsM, units.wave) : "—"}</td>
-                    <td>
+                    <td className="compare-at">
+                      {row.status === "ready" ? formatHs(at?.hsM, units.wave) : "—"}
+                    </td>
+                    <td className="compare-at">
                       {row.status === "ready"
-                        ? formatTempNow(row.now?.tempC, units.temp)
+                        ? formatTempNow(at?.tempC, units.temp)
                         : "—"}
                     </td>
-                    <td className="compare-conditions">
-                      {row.status === "ready"
-                        ? formatConditions(row.now?.weatherCode, row.now?.precipMm)
-                        : "—"}
+                    <td
+                      className="compare-at compare-conditions"
+                      title={conditions === "—" ? undefined : conditions}
+                    >
+                      {conditions}
                     </td>
-                    <td>
+                    <td className="compare-peak compare-group-start">
                       {row.status === "ready" ? (
                         <>
                           {formatHs(row.peakHs?.hsM, units.wave)}
@@ -424,7 +451,7 @@ export function ComparePage() {
                         "—"
                       )}
                     </td>
-                    <td>
+                    <td className="compare-peak">
                       {row.status === "ready" ? (
                         <>
                           {formatWindNow(

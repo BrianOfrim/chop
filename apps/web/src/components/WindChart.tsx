@@ -24,6 +24,10 @@ type Props = {
   hourIndex: number;
   onSelectHour: (index: number) => void;
   windUnit: WindSpeedUnit;
+  /** Hide the per-plot color ramp; stretch the series to the plot width. */
+  compact?: boolean;
+  /** Shared axis ceiling in the active wind unit. */
+  yMax?: number;
 };
 
 const H = 92;
@@ -58,7 +62,14 @@ function DirArrow({
   );
 }
 
-export function WindChart({ hours, hourIndex, onSelectHour, windUnit }: Props) {
+export function WindChart({
+  hours,
+  hourIndex,
+  onSelectHour,
+  windUnit,
+  compact = false,
+  yMax: yMaxProp,
+}: Props) {
   const chart = useMemo(() => {
     if (hours.length === 0) return null;
     const windVals = hours.map((h) => mpsToWind(h.windSpeedMps, windUnit));
@@ -71,7 +82,7 @@ export function WindChart({ hours, hourIndex, onSelectHour, windUnit }: Props) {
       ...windVals,
       ...gustVals.filter((v): v is number => v != null),
     );
-    const yMax = niceWindMax(maxVal, windUnit);
+    const yMax = yMaxProp ?? niceWindMax(maxVal, windUnit);
 
     const innerH = H - PAD.top - PAD.bottom;
     const n = hours.length;
@@ -134,29 +145,31 @@ export function WindChart({ hours, hourIndex, onSelectHour, windUnit }: Props) {
       innerH,
       tickDigits,
     };
-  }, [hours, hourIndex, windUnit]);
+  }, [hours, hourIndex, windUnit, yMaxProp]);
 
   if (!chart) return null;
 
   return (
     <div className="wind-chart forecast-plot">
       <div className="forecast-plot-rail">
-        <ColorScaleLegend
-          orientation="vertical"
-          gradient={scaleGradientCss(DEFAULT_WIND_SCALE, "vertical")}
-          labels={[
-            windScaleLabel(0, windUnit),
-            windScaleLabel(WIND_COLOR_MAX_MPS / 2, windUnit),
-            windScaleLabel(WIND_COLOR_MAX_MPS, windUnit),
-          ]}
-          unit={windUnitLabel(windUnit)}
-        />
+        {!compact && (
+          <ColorScaleLegend
+            orientation="vertical"
+            gradient={scaleGradientCss(DEFAULT_WIND_SCALE, "vertical")}
+            labels={[
+              windScaleLabel(0, windUnit),
+              windScaleLabel(WIND_COLOR_MAX_MPS / 2, windUnit),
+              windScaleLabel(WIND_COLOR_MAX_MPS, windUnit),
+            ]}
+            unit={windUnitLabel(windUnit)}
+          />
+        )}
         <span className="forecast-plot-title">Wind</span>
       </div>
       <svg
         className="wind-chart-svg"
         viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="xMinYMid meet"
+        preserveAspectRatio={compact ? "none" : "xMinYMid meet"}
         role="img"
         aria-label="Wind speed, gust, and direction over the forecast period"
         onClick={(e) => {

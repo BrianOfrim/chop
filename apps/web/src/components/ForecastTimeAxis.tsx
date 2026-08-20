@@ -11,13 +11,20 @@ type Props = {
   times: string[];
   hourIndex: number;
   onSelectHour: (index: number) => void;
+  /** Stretch the axis to the plot width. */
+  compact?: boolean;
 };
 
 const W = CHART_W;
-const H = 34;
+const H = 36;
 const PAD = CHART_PAD;
 
-export function ForecastTimeAxis({ times, hourIndex, onSelectHour }: Props) {
+export function ForecastTimeAxis({
+  times,
+  hourIndex,
+  onSelectHour,
+  compact = false,
+}: Props) {
   const axis = useMemo(() => {
     if (times.length === 0) return null;
     const { slot, barW, xBar, indexFromClientX } = buildTimeAxis(times.length);
@@ -50,7 +57,7 @@ export function ForecastTimeAxis({ times, hourIndex, onSelectHour }: Props) {
     <svg
       className="wind-chart-svg forecast-time-axis"
       viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="xMinYMid meet"
+      preserveAspectRatio={compact ? "none" : "xMinYMid meet"}
       role="img"
       aria-label="Forecast date and time"
       onClick={(e) => {
@@ -83,7 +90,7 @@ export function ForecastTimeAxis({ times, hourIndex, onSelectHour }: Props) {
         <text
           key={`d-${d.text}-${d.x}`}
           x={d.x}
-          y={12}
+          y={13}
           className="wind-chart-day-top"
           textAnchor={d.anchor}
         >
@@ -94,7 +101,7 @@ export function ForecastTimeAxis({ times, hourIndex, onSelectHour }: Props) {
         <text
           key={`h-${h.text}-${h.x}`}
           x={h.x}
-          y={H - 6}
+          y={H - 7}
           className="wind-chart-hour"
           textAnchor="middle"
         >

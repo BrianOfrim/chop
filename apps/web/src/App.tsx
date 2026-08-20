@@ -188,7 +188,9 @@ export default function App() {
   const [advisoriesStatus, setAdvisoriesStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
-  const [lakeInfoOpen, setLakeInfoOpen] = useState(false);
+  const [lakeInfoKind, setLakeInfoKind] = useState<"lake" | "advisory" | null>(
+    null,
+  );
   const [hourIndex, setHourIndex] = useState(0);
   const [forecastPins, setForecastPins] = useState<ForecastPins>(() =>
     typeof window !== "undefined" ? loadForecastPins() : {},
@@ -294,7 +296,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setLakeInfoOpen(false);
+    setLakeInfoKind(null);
   }, [lakeId]);
 
   useEffect(() => {
@@ -954,7 +956,8 @@ export default function App() {
     return ids;
   }, [advisories]);
   const selectedAdvisory = lakeAdvisory(advisories, lakeId);
-  const closeLakeInfo = useCallback(() => setLakeInfoOpen(false), []);
+  const closeLakeInfo = useCallback(() => setLakeInfoKind(null), []);
+  const selectedLake = lakes.find((l) => l.id === lakeId);
 
   return (
     <div className="app">
@@ -995,7 +998,6 @@ export default function App() {
             simulating={mode === "sim"}
             historic={mode === "history"}
             forecastPoint={forecastPoint}
-            forecastPins={forecastPins}
             gpxTrack={mode === "review" ? gpxTrack : null}
             gpxCursor={
               mode === "review" && sessionSample
@@ -1123,25 +1125,57 @@ export default function App() {
               <button
                 type="button"
                 className="lake-name-btn"
-                aria-expanded={lakeInfoOpen}
+                aria-expanded={lakeInfoKind === "lake"}
                 aria-haspopup="dialog"
                 aria-controls="lake-info-panel"
-                title="Lake conditions"
-                onClick={() => setLakeInfoOpen((open) => !open)}
+                title="Lake info"
+                onClick={() =>
+                  setLakeInfoKind((kind) => (kind === "lake" ? null : "lake"))
+                }
               >
                 {spot?.identity.name ?? "—"}
               </button>
               {selectedAdvisory?.advisory && (
-                <span className="advisory-badge">Algae advisory</span>
+                <button
+                  type="button"
+                  className="advisory-badge"
+                  aria-expanded={lakeInfoKind === "advisory"}
+                  aria-haspopup="dialog"
+                  aria-controls="lake-advisory-panel"
+                  title="Algae advisory"
+                  onClick={() =>
+                    setLakeInfoKind((kind) =>
+                      kind === "advisory" ? null : "advisory",
+                    )
+                  }
+                >
+                  Algae advisory
+                </button>
               )}
               {(advisoriesStatus === "error" ||
                 advisories?.status === "unavailable") && (
-                <span className="advisory-unknown">Check AHS</span>
+                <button
+                  type="button"
+                  className="advisory-unknown"
+                  aria-expanded={lakeInfoKind === "advisory"}
+                  aria-haspopup="dialog"
+                  aria-controls="lake-advisory-panel"
+                  title="Advisory status unavailable"
+                  onClick={() =>
+                    setLakeInfoKind((kind) =>
+                      kind === "advisory" ? null : "advisory",
+                    )
+                  }
+                >
+                  Check AHS
+                </button>
               )}
               <LakeInfoPanel
-                open={lakeInfoOpen}
+                open={lakeInfoKind != null}
+                kind={lakeInfoKind ?? "lake"}
                 onClose={closeLakeInfo}
                 lakeName={spot?.identity.name ?? "—"}
+                region={selectedLake?.region}
                 summary={spot?.identity.summary}
                 feed={advisories}
                 feedStatus={advisoriesStatus}

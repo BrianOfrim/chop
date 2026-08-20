@@ -19,6 +19,8 @@ type Props = {
   hours: WindHour[];
   hourIndex: number;
   onSelectHour: (index: number) => void;
+  /** Stretch the strip to the plot width. */
+  compact?: boolean;
 };
 
 const W = CHART_W;
@@ -147,7 +149,12 @@ export function WxGlyph({
   }
 }
 
-export function WeatherStrip({ hours, hourIndex, onSelectHour }: Props) {
+export function WeatherStrip({
+  hours,
+  hourIndex,
+  onSelectHour,
+  compact = false,
+}: Props) {
   const chart = useMemo(() => {
     if (hours.length === 0) return null;
     const n = hours.length;
@@ -215,7 +222,7 @@ export function WeatherStrip({ hours, hourIndex, onSelectHour }: Props) {
       <svg
         className="wind-chart-svg weather-strip-svg"
         viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="xMinYMid meet"
+        preserveAspectRatio={compact ? "none" : "xMinYMid meet"}
         role="img"
         aria-label="Hourly weather and precipitation"
         onClick={(e) => {

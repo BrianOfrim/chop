@@ -2,10 +2,14 @@ import { useEffect, useRef } from "react";
 import type { AdvisoriesResponse, LakeAdvisory } from "../lib/advisories";
 import { AHS_BGA_URL, AHS_LISTING_URL } from "../lib/advisories";
 
+export type LakeInfoKind = "lake" | "advisory";
+
 type Props = {
   open: boolean;
+  kind: LakeInfoKind;
   onClose: () => void;
   lakeName: string;
+  region?: string;
   summary?: string;
   feed: AdvisoriesResponse | null;
   feedStatus: "idle" | "loading" | "ready" | "error";
@@ -27,8 +31,10 @@ function formatIssued(isoDay: string | undefined): string | null {
 
 export function LakeInfoPanel({
   open,
+  kind,
   onClose,
   lakeName,
+  region,
   summary,
   feed,
   feedStatus,
@@ -42,10 +48,7 @@ export function LakeInfoPanel({
       if (e.key === "Escape") onClose();
     };
     const onPointer = (e: PointerEvent) => {
-      if (
-        e.target instanceof Element &&
-        e.target.closest(".lake-info")
-      ) {
+      if (e.target instanceof Element && e.target.closest(".lake-info")) {
         return;
       }
       onClose();
@@ -60,6 +63,36 @@ export function LakeInfoPanel({
 
   if (!open) return null;
 
+  if (kind === "lake") {
+    return (
+      <div
+        ref={panelRef}
+        id="lake-info-panel"
+        className="lake-info-panel"
+        role="dialog"
+        aria-label={`${lakeName} info`}
+      >
+        <div className="lake-info-head">
+          <strong>{lakeName}</strong>
+          <button
+            type="button"
+            className="strava-icon-btn"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        {region && <p className="lake-info-summary">{region}</p>}
+        {summary ? (
+          <p className="lake-info-status">{summary}</p>
+        ) : (
+          <p className="lake-info-note">No lake notes yet.</p>
+        )}
+      </div>
+    );
+  }
+
   const unavailable = feedStatus === "error" || feed?.status === "unavailable";
   const loading = feedStatus === "idle" || feedStatus === "loading";
   const active = Boolean(lake?.advisory);
@@ -71,13 +104,13 @@ export function LakeInfoPanel({
   return (
     <div
       ref={panelRef}
-      id="lake-info-panel"
+      id="lake-advisory-panel"
       className="lake-info-panel"
       role="dialog"
-      aria-label={`${lakeName} conditions`}
+      aria-label={`${lakeName} algae advisory`}
     >
       <div className="lake-info-head">
-        <strong>{lakeName}</strong>
+        <strong>Algae advisory</strong>
         <button
           type="button"
           className="strava-icon-btn"
@@ -87,8 +120,6 @@ export function LakeInfoPanel({
           ×
         </button>
       </div>
-
-      {summary && <p className="lake-info-summary">{summary}</p>}
 
       {loading && !feed ? (
         <p className="lake-info-status">Loading advisory status…</p>
@@ -100,12 +131,12 @@ export function LakeInfoPanel({
       ) : active ? (
         <p className="lake-info-status is-advisory">
           Alberta Health Services has issued a cyanobacteria (blue-green algae)
-          advisory for this lake
+          advisory for {lakeName}
           {issued ? ` (${issued})` : ""}.
         </p>
       ) : (
         <p className="lake-info-status">
-          No active AHS cyanobacteria advisory for this lake. That is not a
+          No active AHS cyanobacteria advisory for {lakeName}. That is not a
           guarantee the water is clear — not every waterbody is monitored, and
           blooms can appear or shift with the wind.
         </p>

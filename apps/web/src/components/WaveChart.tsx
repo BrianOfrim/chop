@@ -30,9 +30,15 @@ type Props = {
   hours: WindHour[];
   hourIndex: number;
   onSelectHour: (index: number) => void;
-  grids: LakeGrids;
   waveUnit: WaveHeightUnit;
+  grids?: LakeGrids | null;
   sampleAt?: ForecastPoint | null;
+  /** Precomputed max Hs (m) per hour; skips grid sampling when set. */
+  hsMSeries?: Array<number | null>;
+  /** Hide the per-plot color ramp; stretch the series to the plot width. */
+  compact?: boolean;
+  /** Shared axis ceiling in the active wave unit. */
+  yMax?: number;
 };
 
 const W = CHART_W;
@@ -62,31 +68,36 @@ export function WaveChart({
   hours,
   hourIndex,
   onSelectHour,
-  grids,
+  grids = null,
   waveUnit,
   sampleAt = null,
+  hsMSeries: hsMSeriesProp,
+  compact = false,
+  yMax: yMaxProp,
 }: Props) {
-  const hsMSeries = useMemo(
-    () =>
-      hours.map((h) => {
-        const hs = computeHsGrid(grids, h.windSpeedMps, h.windDirDeg);
-        if (sampleAt) {
-          return (
-            sampleGridNearestWater(hs, grids.meta, sampleAt.lon, sampleAt.lat) ??
-            0
-          );
-        }
-        return maxHsM(hs);
-      }),
-    [grids, hours, sampleAt],
-  );
+  const hsMSeries = useMemo(() => {
+    if (hsMSeriesProp) {
+      return hsMSeriesProp.map((m) => (m != null && Number.isFinite(m) ? m : 0));
+    }
+    if (!grids) return hours.map(() => 0);
+    return hours.map((h) => {
+      const hs = computeHsGrid(grids, h.windSpeedMps, h.windDirDeg);
+      if (sampleAt) {
+        return (
+          sampleGridNearestWater(hs, grids.meta, sampleAt.lon, sampleAt.lat) ??
+          0
+        );
+      }
+      return maxHsM(hs);
+    });
+  }, [grids, hours, sampleAt, hsMSeriesProp]);
 
   const chart = useMemo(() => {
     if (hours.length === 0) return null;
     const vals = hsMSeries.map((m) => metersToWave(m, waveUnit));
     const peak = Math.max(...vals, metersToWave(0.01, waveUnit));
     const floor = metersToWave(HS_COLOR_MAX_M * 0.5, waveUnit);
-    const yMax = niceWaveMax(Math.max(peak, floor), waveUnit);
+    const yMax = yMaxProp ?? niceWaveMax(Math.max(peak, floor), waveUnit);
 
     const innerH = H - PAD.top - PAD.bottom;
     const n = hours.length;
@@ -125,29 +136,31 @@ export function WaveChart({
       dayDividers,
       innerH,
     };
-  }, [hours, hourIndex, hsMSeries, waveUnit]);
+  }, [hours, hourIndex, hsMSeries, waveUnit, yMaxProp]);
 
   if (!chart) return null;
 
   return (
     <div className="wave-chart forecast-plot">
       <div className="forecast-plot-rail">
-        <ColorScaleLegend
-          orientation="vertical"
-          gradient={scaleGradientCss(DEFAULT_WAVE_SCALE, "vertical")}
-          labels={[
-            waveScaleLabel(0, waveUnit),
-            waveScaleLabel(HS_COLOR_MAX_M / 2, waveUnit),
-            waveScaleLabel(HS_COLOR_MAX_M, waveUnit),
-          ]}
-          unit={waveUnitLabel(waveUnit)}
-        />
+        {!compact && (
+          <ColorScaleLegend
+            orientation="vertical"
+            gradient={scaleGradientCss(DEFAULT_WAVE_SCALE, "vertical")}
+            labels={[
+              waveScaleLabel(0, waveUnit),
+              waveScaleLabel(HS_COLOR_MAX_M / 2, waveUnit),
+              waveScaleLabel(HS_COLOR_MAX_M, waveUnit),
+            ]}
+            unit={waveUnitLabel(waveUnit)}
+          />
+        )}
         <span className="forecast-plot-title">Waves</span>
       </div>
       <svg
         className="wind-chart-svg"
         viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="xMinYMid meet"
+        preserveAspectRatio={compact ? "none" : "xMinYMid meet"}
         role="img"
         aria-label={
           sampleAt

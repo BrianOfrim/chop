@@ -207,34 +207,19 @@ function occupancyIndex(
   return row * cols + col;
 }
 
-/** Drop off-screen particles immediately. After a zoom jump, keep at most one per cell. */
-function settleView(
+/** Drop particles that have left the viewport (pan). */
+function dropOffscreen(
   map: MapLibreMap,
   particles: Particle[],
   width: number,
   height: number,
-  zoomJumped: boolean,
 ): void {
-  const { cols, rows } = occupancySize(width, height);
-  const seen = zoomJumped ? new Uint8Array(cols * rows) : null;
   for (let i = 0; i < particles.length; i++) {
     const p = particles[i]!;
     const screen = map.project([p.lon, p.lat]);
-    if (!inView(screen.x, screen.y, width, height)) {
-      particles.splice(i, 1);
-      i -= 1;
-      continue;
-    }
-    if (!seen) continue;
-    const idx = occupancyIndex(screen.x, screen.y, width, height, cols, rows);
-    if (seen[idx]) {
-      particles.splice(i, 1);
-      i -= 1;
-      continue;
-    }
-    seen[idx] = 1;
-    p.dying = false;
-    p.fade = 1;
+    if (inView(screen.x, screen.y, width, height)) continue;
+    particles.splice(i, 1);
+    i -= 1;
   }
 }
 
@@ -307,7 +292,7 @@ export function stepWindParticles(
   slice: WindFieldSlice,
   particles: Particle[],
   dt: number,
-  opts: { fade: boolean; viewChanged?: boolean; zoomJumped?: boolean },
+  opts: { fade: boolean; viewChanged?: boolean; zoomChanged?: boolean },
 ): boolean {
   const synced = syncParticleCanvas(canvas, map);
   if (!synced) return false;
@@ -315,8 +300,10 @@ export function stepWindParticles(
   const step = Math.min(0.05, Math.max(0, dt));
   const want = particleCountForView(width, height);
 
-  if (opts.viewChanged) {
-    settleView(map, particles, width, height, Boolean(opts.zoomJumped));
+  if (opts.zoomChanged) {
+    particles.length = 0;
+  } else if (opts.viewChanged) {
+    dropOffscreen(map, particles, width, height);
   }
   fillEmptyCells(map, slice, particles, width, height, want);
 

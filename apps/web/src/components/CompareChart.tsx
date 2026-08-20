@@ -1,41 +1,66 @@
 import { useMemo } from "react";
-import { nearestHourIndex, type WindHour } from "../lib/wind";
-import {
-  CHART_PAD,
-  CHART_W,
-  CHART_WIND_PAD,
-  buildDaySegs,
-  buildTimeAxis,
-  sliderInsetStyle,
-} from "../lib/forecastChart";
+import { formatWind, nearestHourIndex, type WindHour } from "../lib/wind";
+import { sliderInsetStyle } from "../lib/forecastChart";
 import {
   celsiusToTemp,
+  formatTemp,
+  formatWaveHeight,
   metersToWave,
   mpsToWind,
   niceTempRange,
   niceWaveMax,
   niceWindMax,
   tempUnitLabel,
-  waveUnitLabel,
-  windUnitLabel,
   type TempUnit,
   type WaveHeightUnit,
   type WindSpeedUnit,
+  waveUnitLabel,
+  windUnitLabel,
 } from "../lib/units";
+import { formatWeatherHour, isThunder } from "../lib/weather";
+import { WindChart } from "./WindChart";
+import { WaveChart } from "./WaveChart";
+import { TempChart, hasTempHours } from "./TempChart";
+import { WeatherStrip } from "./WeatherStrip";
 import { ForecastTimeAxis } from "./ForecastTimeAxis";
-import { WxGlyph } from "./WeatherStrip";
+import { ColorScaleLegend } from "./ColorScaleLegend";
 import { compareChartTimes } from "../lib/compareLakes";
 import {
-  formatWeatherHour,
-  isNightLocalTime,
-  isThunder,
-  weatherKind,
-} from "../lib/weather";
+  DEFAULT_TEMP_SCALE,
+  DEFAULT_WAVE_SCALE,
+  DEFAULT_WIND_SCALE,
+  scaleGradientCss,
+} from "../lib/colorScales";
+import { WIND_COLOR_MAX_MPS } from "../lib/windScale";
+import { HS_COLOR_MAX_M } from "../lib/hsOverlay";
+import { TEMP_COLOR_MAX_C, TEMP_COLOR_MIN_C } from "../lib/tempScale";
+
+function formatSelectedWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+  });
+}
+
+function formatHs(m: number | null | undefined, unit: WaveHeightUnit): string {
+  if (m == null || !Number.isFinite(m)) return "—";
+  return formatWaveHeight(m, unit);
+}
+
+function windLegendLabel(mps: number, unit: WindSpeedUnit): string {
+  return mpsToWind(mps, unit).toFixed(unit === "mps" ? 1 : 0);
+}
+
+function waveLegendLabel(m: number, unit: WaveHeightUnit): string {
+  const v = metersToWave(m, unit);
+  return unit === "cm" ? v.toFixed(0) : v.toFixed(1);
+}
 
 export type CompareSeries = {
   id: string;
   name: string;
-  color: string;
   hours: WindHour[];
   hsM: Array<number | null>;
 };
@@ -49,195 +74,12 @@ type Props = {
   tempUnit: TempUnit;
 };
 
-const W = CHART_W;
-const WIND_H = 92;
-const WAVE_H = 78;
-const TEMP_H = 78;
-const WX_ROW = 18;
-const PRECIP_BAR_MAX_MM = 4;
-const PRECIP_BAR_H = 4;
-
-function byTime<T>(times: string[], hours: WindHour[], values: T[]): Array<T | null> {
-  const map = new Map<string, T>();
-  hours.forEach((h, i) => {
-    const v = values[i];
-    if (v !== undefined) map.set(h.time, v);
-  });
-  return times.map((t) => map.get(t) ?? null);
-}
-
-function lineSegs(
-  times: string[],
-  values: Array<number | null>,
-  xAt: (i: number) => number,
-  yAt: (v: number) => number,
-): string[] {
-  const segs: string[] = [];
-  let d = "";
-  times.forEach((_, i) => {
-    const v = values[i];
-    if (v == null || !Number.isFinite(v)) {
-      if (d) {
-        segs.push(d);
-        d = "";
-      }
-      return;
-    }
-    const cmd = `${xAt(i).toFixed(2)} ${yAt(v).toFixed(2)}`;
-    d += d ? ` L ${cmd}` : `M ${cmd}`;
-  });
-  if (d) segs.push(d);
-  return segs;
-}
-
-function DirMark({
-  x,
-  y,
-  toBearing,
-  color,
-}: {
-  x: number;
-  y: number;
-  toBearing: number;
-  color: string;
-}) {
-  return (
-    <g transform={`translate(${x} ${y}) rotate(${toBearing})`}>
-      <line x1="0" y1="5" x2="0" y2="-5" stroke={color} strokeWidth="1.4" />
-      <polygon points="0,-6 2.4,-1.5 -2.4,-1.5" fill={color} />
-    </g>
-  );
-}
-
-function OverlayPlot({
-  title,
-  unit,
-  times,
-  hourIndex,
-  onSelectHour,
-  yMin = 0,
-  yMax,
-  tickDigits,
-  height,
-  padBottom,
-  seriesLines,
-  dirMarks,
-}: {
-  title: string;
-  unit: string;
-  times: string[];
-  hourIndex: number;
-  onSelectHour: (index: number) => void;
-  yMin?: number;
-  yMax: number;
-  tickDigits: number;
-  height: number;
-  padBottom: number;
-  seriesLines: Array<{ id: string; color: string; segs: string[] }>;
-  dirMarks?: Array<{ id: string; color: string; toBearing: number }>;
-}) {
-  const pad = { ...CHART_PAD, bottom: padBottom };
-  const innerH = height - pad.top - pad.bottom;
-  const axis = buildTimeAxis(times.length);
-  const span = yMax - yMin || 1;
-  const yAt = (v: number) => pad.top + innerH * (1 - (v - yMin) / span);
-  const ticks = [yMin, yMin + span / 2, yMax];
-  const daySegs = buildDaySegs(times);
-  const dayDividers = daySegs.slice(1).map((seg) => pad.left + seg.start * axis.slot);
-  const selectedX = axis.xBar(hourIndex);
-  const dirY = height - pad.bottom / 2;
-
-  return (
-    <div className="forecast-plot compare-plot">
-      <div className="forecast-plot-rail">
-        <span className="forecast-plot-title">{title}</span>
-        <span className="forecast-plot-unit">{unit}</span>
-      </div>
-      <svg
-        className="wind-chart-svg"
-        viewBox={`0 0 ${W} ${height}`}
-        preserveAspectRatio="xMinYMid meet"
-        role="img"
-        aria-label={`${title} forecast comparison`}
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          onSelectHour(
-            axis.indexFromClientX(e.clientX - rect.left, rect.width, times.length),
-          );
-        }}
-      >
-        {dayDividers.map((x) => (
-          <line
-            key={`div-${x}`}
-            x1={x}
-            x2={x}
-            y1={4}
-            y2={height - 2}
-            className="wind-chart-day-div"
-          />
-        ))}
-        {ticks.map((v) => (
-          <g key={`tick-${v}`}>
-            <line
-              x1={pad.left}
-              x2={W - pad.right}
-              y1={yAt(v)}
-              y2={yAt(v)}
-              className="wind-chart-grid"
-            />
-            <text
-              x={pad.left - 4}
-              y={yAt(v) + 3}
-              className="wind-chart-tick"
-              textAnchor="end"
-            >
-              {v.toFixed(tickDigits)}
-            </text>
-          </g>
-        ))}
-        {times.length > 0 && (
-          <rect
-            x={selectedX - 0.6}
-            y={pad.top}
-            width={axis.barW + 1.2}
-            height={innerH}
-            className="wind-chart-selection"
-          />
-        )}
-        {seriesLines.map((s) =>
-          s.segs.map((d, i) => (
-            <g key={`${s.id}-${i}`}>
-              <path
-                d={d}
-                fill="none"
-                stroke="rgba(248, 246, 240, 0.9)"
-                strokeWidth="3.8"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-              <path
-                d={d}
-                fill="none"
-                stroke={s.color}
-                strokeWidth="2.4"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            </g>
-          )),
-        )}
-        {dirMarks?.map((m, i) => (
-          <DirMark
-            key={m.id}
-            x={axis.xCenter(hourIndex) + (i - (dirMarks.length - 1) / 2) * 8}
-            y={dirY}
-            toBearing={m.toBearing}
-            color={m.color}
-          />
-        ))}
-      </svg>
-    </div>
-  );
+function localHourIndex(hours: WindHour[], selectedTime: string | undefined): number {
+  if (!selectedTime || hours.length === 0) return 0;
+  const exact = hours.findIndex((h) => h.time === selectedTime);
+  if (exact >= 0) return exact;
+  const t = Date.parse(selectedTime);
+  return Number.isFinite(t) ? nearestHourIndex(hours, t) : 0;
 }
 
 export function CompareCharts({
@@ -248,165 +90,192 @@ export function CompareCharts({
   waveUnit,
   tempUnit,
 }: Props) {
-  const chart = useMemo(() => {
-    if (series.length === 0) return null;
-    const times = compareChartTimes(series);
-    if (times.length === 0) return null;
-    const axis = buildTimeAxis(times.length);
-    const xAt = (i: number) => axis.xCenter(i);
-
-    const windVals = series.map((s) =>
-      byTime(
-        times,
-        s.hours,
-        s.hours.map((h) => mpsToWind(h.windSpeedMps, windUnit)),
-      ),
-    );
-    const hsVals = series.map((s) =>
-      byTime(
-        times,
-        s.hours,
-        s.hsM.map((m) => (m == null ? null : metersToWave(m, waveUnit))),
-      ),
-    );
-    const tempCVals = series.map((s) =>
-      byTime(
-        times,
-        s.hours,
-        s.hours.map((h) =>
-          h.tempC != null && Number.isFinite(h.tempC) ? h.tempC : null,
-        ),
-      ),
-    );
-    const tempVals = tempCVals.map((vals) =>
-      vals.map((c) => (c == null ? null : celsiusToTemp(c, tempUnit))),
-    );
-
-    const windPeak = Math.max(
-      0.01,
-      ...windVals.flatMap((vals) => vals.filter((v): v is number => v != null)),
-    );
-    const hsPeak = Math.max(
-      0.01,
-      ...hsVals.flatMap((vals) => vals.filter((v): v is number => v != null)),
-    );
-    const tempKnownC = tempCVals.flatMap((vals) =>
-      vals.filter((v): v is number => v != null),
-    );
-    const windMax = niceWindMax(windPeak, windUnit);
-    const waveMax = niceWaveMax(hsPeak, waveUnit);
+  const times = useMemo(() => compareChartTimes(series), [series]);
+  const selectedTime = times[hourIndex];
+  const nowIndex = nearestHourIndex(times.map((time) => ({ time })));
+  const showTemp = series.some((s) => hasTempHours(s.hours));
+  const sharedScale = useMemo(() => {
+    let windMax = 0;
+    let waveMaxM = 0.01;
+    let tempMinC: number | null = null;
+    let tempMaxC: number | null = null;
+    for (const s of series) {
+      for (const h of s.hours) {
+        windMax = Math.max(windMax, mpsToWind(h.windSpeedMps, windUnit));
+        if (h.gustMps != null && Number.isFinite(h.gustMps)) {
+          windMax = Math.max(windMax, mpsToWind(h.gustMps, windUnit));
+        }
+        if (h.tempC != null && Number.isFinite(h.tempC)) {
+          tempMinC = tempMinC == null ? h.tempC : Math.min(tempMinC, h.tempC);
+          tempMaxC = tempMaxC == null ? h.tempC : Math.max(tempMaxC, h.tempC);
+        }
+      }
+      for (const m of s.hsM) {
+        if (m != null && Number.isFinite(m)) waveMaxM = Math.max(waveMaxM, m);
+      }
+    }
+    const wavePeak = metersToWave(waveMaxM, waveUnit);
+    const waveFloor = metersToWave(HS_COLOR_MAX_M * 0.5, waveUnit);
     const tempRange =
-      tempKnownC.length > 0
-        ? niceTempRange(Math.min(...tempKnownC), Math.max(...tempKnownC), tempUnit)
+      tempMinC != null && tempMaxC != null
+        ? niceTempRange(tempMinC, tempMaxC, tempUnit)
         : null;
-    const windInnerH = WIND_H - CHART_WIND_PAD.top - CHART_WIND_PAD.bottom;
-    const waveInnerH = WAVE_H - CHART_PAD.top - CHART_PAD.bottom;
-    const windY = (v: number) =>
-      CHART_WIND_PAD.top + windInnerH * (1 - v / windMax);
-    const waveY = (v: number) => CHART_PAD.top + waveInnerH * (1 - v / waveMax);
-    const tempSpan = tempRange ? tempRange.max - tempRange.min || 1 : 1;
-    const tempInnerH = TEMP_H - CHART_PAD.top - CHART_PAD.bottom;
-    const tempY = (v: number) =>
-      CHART_PAD.top + tempInnerH * (1 - (v - (tempRange?.min ?? 0)) / tempSpan);
-
-    const windLines = series.map((s, i) => ({
-      id: s.id,
-      color: s.color,
-      segs: lineSegs(times, windVals[i]!, xAt, windY),
-    }));
-    const waveLines = series.map((s, i) => ({
-      id: s.id,
-      color: s.color,
-      segs: lineSegs(times, hsVals[i]!, xAt, waveY),
-    }));
-    const tempLines = tempRange
-      ? series.map((s, i) => ({
-          id: s.id,
-          color: s.color,
-          segs: lineSegs(times, tempVals[i]!, xAt, tempY),
-        }))
-      : [];
-
-    const selectedTime = times[hourIndex];
-    const dirMarks = series.flatMap((s) => {
-      const h = s.hours.find((hr) => hr.time === selectedTime);
-      if (!h) return [];
-      return [{ id: s.id, color: s.color, toBearing: (h.windDirDeg + 180) % 360 }];
-    });
-
     return {
-      times,
-      windMax,
-      waveMax,
-      tempRange,
-      windLines,
-      waveLines,
-      tempLines,
-      dirMarks,
-      windDigits: windUnit === "mps" ? 1 : 0,
-      waveDigits: waveUnit === "m" ? 2 : waveUnit === "ft" ? 1 : 0,
+      windYMax: niceWindMax(windMax, windUnit),
+      waveYMax: niceWaveMax(Math.max(wavePeak, waveFloor), waveUnit),
+      tempYMin: tempRange?.min,
+      tempYMax: tempRange?.max,
     };
-  }, [series, hourIndex, windUnit, waveUnit, tempUnit]);
+  }, [series, windUnit, waveUnit, tempUnit]);
 
-  if (!chart) return null;
+  if (series.length === 0 || times.length === 0) return null;
 
-  const nowIndex = nearestHourIndex(chart.times.map((time) => ({ time })));
+  function selectFromLake(hours: WindHour[], localIndex: number) {
+    const t = hours[localIndex]?.time;
+    if (!t) return;
+    const i = times.indexOf(t);
+    onSelectHour(i >= 0 ? i : localIndex);
+  }
 
   return (
     <div className="compare-charts">
-      <OverlayPlot
-        title="Wind"
-        unit={windUnitLabel(windUnit)}
-        times={chart.times}
-        hourIndex={hourIndex}
-        onSelectHour={onSelectHour}
-        yMax={chart.windMax}
-        tickDigits={chart.windDigits}
-        height={WIND_H}
-        padBottom={CHART_WIND_PAD.bottom}
-        seriesLines={chart.windLines}
-        dirMarks={chart.dirMarks}
-      />
-      <OverlayPlot
-        title="Waves"
-        unit={waveUnitLabel(waveUnit)}
-        times={chart.times}
-        hourIndex={hourIndex}
-        onSelectHour={onSelectHour}
-        yMax={chart.waveMax}
-        tickDigits={chart.waveDigits}
-        height={WAVE_H}
-        padBottom={CHART_PAD.bottom}
-        seriesLines={chart.waveLines}
-      />
-      {chart.tempRange && (
-        <OverlayPlot
-          title="Temp"
-          unit={tempUnitLabel(tempUnit)}
-          times={chart.times}
-          hourIndex={hourIndex}
-          onSelectHour={onSelectHour}
-          yMin={chart.tempRange.min}
-          yMax={chart.tempRange.max}
-          tickDigits={0}
-          height={TEMP_H}
-          padBottom={CHART_PAD.bottom}
-          seriesLines={chart.tempLines}
-        />
-      )}
-      <CompareWeather
-        series={series}
-        times={chart.times}
-        hourIndex={hourIndex}
-        onSelectHour={onSelectHour}
-      />
+      <div className="compare-scale-legends" aria-label="Shared color scales">
+        <div className="compare-scale-legend">
+          <span className="compare-scale-legend-title">Wind</span>
+          <ColorScaleLegend
+            gradient={scaleGradientCss(DEFAULT_WIND_SCALE)}
+            labels={[
+              windLegendLabel(0, windUnit),
+              windLegendLabel(WIND_COLOR_MAX_MPS / 2, windUnit),
+              windLegendLabel(WIND_COLOR_MAX_MPS, windUnit),
+            ]}
+            unit={windUnitLabel(windUnit)}
+          />
+        </div>
+        <div className="compare-scale-legend">
+          <span className="compare-scale-legend-title">Waves</span>
+          <ColorScaleLegend
+            gradient={scaleGradientCss(DEFAULT_WAVE_SCALE)}
+            labels={[
+              waveLegendLabel(0, waveUnit),
+              waveLegendLabel(HS_COLOR_MAX_M / 2, waveUnit),
+              waveLegendLabel(HS_COLOR_MAX_M, waveUnit),
+            ]}
+            unit={waveUnitLabel(waveUnit)}
+          />
+        </div>
+        {showTemp && (
+          <div className="compare-scale-legend">
+            <span className="compare-scale-legend-title">Temp</span>
+            <ColorScaleLegend
+              gradient={scaleGradientCss(DEFAULT_TEMP_SCALE)}
+              labels={[
+                celsiusToTemp(TEMP_COLOR_MIN_C, tempUnit).toFixed(0),
+                celsiusToTemp(
+                  (TEMP_COLOR_MIN_C + TEMP_COLOR_MAX_C) / 2,
+                  tempUnit,
+                ).toFixed(0),
+                celsiusToTemp(TEMP_COLOR_MAX_C, tempUnit).toFixed(0),
+              ]}
+              unit={tempUnitLabel(tempUnit)}
+            />
+          </div>
+        )}
+      </div>
+      <div className="compare-lake-grid" data-count={series.length}>
+        {series.map((s) => {
+          const localIndex = localHourIndex(s.hours, selectedTime);
+          const selectHour = (i: number) => selectFromLake(s.hours, i);
+          const hour = s.hours[localIndex];
+          const hsM = s.hsM[localIndex] ?? null;
+          return (
+            <section
+              key={s.id}
+              className="compare-lake-panel"
+              aria-label={`${s.name} forecast`}
+            >
+              <h2 className="compare-lake-heading">{s.name}</h2>
+              <p className="compare-lake-readout">
+                {hour ? (
+                  <>
+                    <span>
+                      {formatWind(
+                        hour.windSpeedMps,
+                        hour.windDirDeg,
+                        hour.gustMps,
+                        windUnit,
+                      )}
+                    </span>
+                    <span>Hs {formatHs(hsM, waveUnit)}</span>
+                    {hour.tempC != null && Number.isFinite(hour.tempC) && (
+                      <span>{formatTemp(hour.tempC, tempUnit)}</span>
+                    )}
+                    <span
+                      className={
+                        isThunder(hour.weatherCode)
+                          ? "wx-readout thunder"
+                          : undefined
+                      }
+                    >
+                      {formatWeatherHour(hour.weatherCode, hour.precipMm)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="muted">No data at this hour</span>
+                )}
+              </p>
+              <WindChart
+                hours={s.hours}
+                hourIndex={localIndex}
+                onSelectHour={selectHour}
+                windUnit={windUnit}
+                compact
+                yMax={sharedScale.windYMax}
+              />
+              <WaveChart
+                hours={s.hours}
+                hourIndex={localIndex}
+                onSelectHour={selectHour}
+                waveUnit={waveUnit}
+                hsMSeries={s.hsM}
+                compact
+                yMax={sharedScale.waveYMax}
+              />
+              {hasTempHours(s.hours) && (
+                <TempChart
+                  hours={s.hours}
+                  hourIndex={localIndex}
+                  onSelectHour={selectHour}
+                  tempUnit={tempUnit}
+                  compact
+                  yMin={sharedScale.tempYMin}
+                  yMax={sharedScale.tempYMax}
+                />
+              )}
+              <WeatherStrip
+                hours={s.hours}
+                hourIndex={localIndex}
+                onSelectHour={selectHour}
+                compact
+              />
+            </section>
+          );
+        })}
+      </div>
       <div className="forecast-plot">
         <div className="forecast-plot-rail" aria-hidden />
         <ForecastTimeAxis
-          times={chart.times}
+          times={times}
           hourIndex={hourIndex}
           onSelectHour={onSelectHour}
         />
+      </div>
+      <div className="forecast-plot compare-selected-time-row">
+        <div className="forecast-plot-rail" aria-hidden />
+        <p className="compare-selected-time" aria-live="polite">
+          {times[hourIndex] ? formatSelectedWhen(times[hourIndex]!) : ""}
+          {hourIndex === nowIndex ? " · Now" : ""}
+        </p>
       </div>
       <div className="forecast-plot scrubber-row">
         <div className="forecast-plot-rail scrubber-rail">
@@ -419,154 +288,23 @@ export function CompareCharts({
             Now
           </button>
         </div>
-        <div className="scrubber" style={sliderInsetStyle(chart.times.length)}>
+        <div className="scrubber" style={sliderInsetStyle(times.length)}>
           <input
             type="range"
             min={0}
-            max={chart.times.length - 1}
+            max={times.length - 1}
             step={1}
-            value={Math.min(hourIndex, chart.times.length - 1)}
+            value={Math.min(hourIndex, times.length - 1)}
             onChange={(e) => onSelectHour(Number(e.target.value))}
             aria-label="Forecast hour"
+            aria-valuetext={
+              times[hourIndex]
+                ? `${formatSelectedWhen(times[hourIndex]!)}${hourIndex === nowIndex ? ", now" : ""}`
+                : undefined
+            }
           />
         </div>
       </div>
-    </div>
-  );
-}
-
-function CompareWeather({
-  series,
-  times,
-  hourIndex,
-  onSelectHour,
-}: {
-  series: CompareSeries[];
-  times: string[];
-  hourIndex: number;
-  onSelectHour: (index: number) => void;
-}) {
-  const chart = useMemo(() => {
-    if (times.length === 0 || series.length === 0) return null;
-    const axis = buildTimeAxis(times.length);
-    const daySegs = buildDaySegs(times);
-    const dayDividers = daySegs
-      .slice(1)
-      .map((seg) => CHART_PAD.left + seg.start * axis.slot);
-    const iconSize = Math.max(5.2, Math.min(10, axis.barW * 1.15));
-    const height = 6 + series.length * WX_ROW;
-    const rows = series.map((s, row) => {
-      const byT = new Map(s.hours.map((h) => [h.time, h]));
-      const y0 = 4 + row * WX_ROW;
-      const cells = times.map((time, i) => {
-        const h = byT.get(time);
-        const precip = h?.precipMm ?? 0;
-        const wet = precip >= 0.05;
-        return {
-          i,
-          x: axis.xBar(i),
-          cx: axis.xCenter(i),
-          kind: weatherKind(h?.weatherCode ?? null),
-          thunder: isThunder(h?.weatherCode),
-          night: isNightLocalTime(time),
-          precip,
-          wet,
-          barH: wet
-            ? Math.max(
-                1,
-                Math.min(PRECIP_BAR_H, (precip / PRECIP_BAR_MAX_MM) * PRECIP_BAR_H),
-              )
-            : 0,
-          title: h ? formatWeatherHour(h.weatherCode, precip) : "—",
-        };
-      });
-      return { id: s.id, color: s.color, y0, cells };
-    });
-    return { axis, dayDividers, iconSize, height, rows };
-  }, [series, times]);
-
-  if (!chart) return null;
-  const selectedX = chart.axis.xBar(hourIndex);
-
-  return (
-    <div className="forecast-plot compare-plot">
-      <div className="forecast-plot-rail">
-        <span className="forecast-plot-title">Sky</span>
-      </div>
-      <svg
-        className="wind-chart-svg"
-        viewBox={`0 0 ${W} ${chart.height}`}
-        preserveAspectRatio="xMinYMid meet"
-        role="img"
-        aria-label="Weather and precipitation comparison"
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          onSelectHour(
-            chart.axis.indexFromClientX(
-              e.clientX - rect.left,
-              rect.width,
-              times.length,
-            ),
-          );
-        }}
-      >
-        {chart.dayDividers.map((x) => (
-          <line
-            key={`div-${x}`}
-            x1={x}
-            x2={x}
-            y1={2}
-            y2={chart.height - 2}
-            className="wind-chart-day-div"
-          />
-        ))}
-        {times.length > 0 && (
-          <rect
-            x={selectedX - 0.6}
-            y={2}
-            width={chart.axis.barW + 1.2}
-            height={chart.height - 4}
-            className="wind-chart-selection"
-          />
-        )}
-        {chart.rows.map((row) => (
-          <g key={row.id}>
-            <rect
-              x={CHART_PAD.left - 10}
-              y={row.y0 + 3}
-              width="5"
-              height={WX_ROW - 8}
-              rx="1"
-              fill={row.color}
-            />
-            {row.cells.map((c) => (
-              <g key={c.i}>
-                <title>{c.title}</title>
-                <g
-                  transform={`translate(${c.cx.toFixed(1)},${(row.y0 + 8).toFixed(1)}) scale(${(chart.iconSize / 12).toFixed(3)})`}
-                >
-                  <WxGlyph
-                    kind={c.kind}
-                    thunder={c.thunder}
-                    night={c.night}
-                  />
-                </g>
-                {c.wet && (
-                  <rect
-                    x={c.x}
-                    y={row.y0 + WX_ROW - 3 - c.barH}
-                    width={chart.axis.barW}
-                    height={c.barH}
-                    fill={row.color}
-                    opacity="0.55"
-                    rx={0.4}
-                  />
-                )}
-              </g>
-            ))}
-          </g>
-        ))}
-      </svg>
     </div>
   );
 }

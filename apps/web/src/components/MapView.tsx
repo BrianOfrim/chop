@@ -174,8 +174,6 @@ type Props = {
   simulating?: boolean;
   historic?: boolean;
   forecastPoint?: ForecastPoint | null;
-  /** All lake pins; drawn together so each lake can keep its own spot. */
-  forecastPins?: Record<string, ForecastPoint>;
   gpxTrack?: GpxTrack | null;
   /** Moving cursor along an uploaded track (session scrubber). */
   gpxCursor?: { lon: number; lat: number; headingDeg?: number | null } | null;
@@ -1067,7 +1065,6 @@ export function MapView({
   simulating = false,
   historic = false,
   forecastPoint = null,
-  forecastPins = {},
   gpxTrack = null,
   gpxCursor = null,
   gpxWindTicks = null,
@@ -1119,8 +1116,6 @@ export function MapView({
   selectedLakeIdRef.current = selectedLakeId;
   const forecastPointRef = useRef(forecastPoint);
   forecastPointRef.current = forecastPoint;
-  const forecastPinsRef = useRef(forecastPins);
-  forecastPinsRef.current = forecastPins;
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [ready, setReady] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>(() =>
@@ -1186,8 +1181,16 @@ export function MapView({
       style: makeStyle(loadBasemap()),
       center: [spot.identity.longitude, spot.identity.latitude],
       zoom: 11.2,
+      bearing: 0,
+      dragRotate: false,
+      pitchWithRotate: false,
     });
-    map.addControl(new NavigationControl({ visualizePitch: false }), "top-right");
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
+    map.addControl(
+      new NavigationControl({ visualizePitch: false, showCompass: false }),
+      "top-right",
+    );
     mapRef.current = map;
 
     // style.load fires when the style JSON is ready. map "load" waits for every
@@ -1924,14 +1927,13 @@ export function MapView({
     const canvas = lakeOutlineCanvasRef.current;
     if (!map || !ready || !canvas) return;
     const draw = () => {
-      const pins = Object.values(forecastPinsRef.current);
       drawLakeOutlines(
         canvas,
         map,
         allShorelinesRef.current,
         selectedLakeIdRef.current,
         basemap === "satellite",
-        pins.length > 0 ? pins : forecastPointRef.current,
+        forecastPointRef.current,
       );
     };
     draw();
@@ -1944,7 +1946,7 @@ export function MapView({
       map.off("resize", draw);
       ro.disconnect();
     };
-  }, [ready, allShorelines, selectedLakeId, basemap, forecastPoint, forecastPins]);
+  }, [ready, allShorelines, selectedLakeId, basemap, forecastPoint]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2159,7 +2161,7 @@ export function MapView({
     let last = performance.now();
     let moving = false;
     let viewChanged = true;
-    let zoomJumped = true;
+    let zoomChanged = true;
     let lastZoom = map.getZoom();
     const onMoveStart = () => {
       moving = true;
@@ -2167,10 +2169,14 @@ export function MapView({
     };
     const onMoveEnd = () => {
       moving = false;
-      const z = map.getZoom();
-      zoomJumped = Math.abs(z - lastZoom) > 0.2;
-      lastZoom = z;
       viewChanged = true;
+      const z = map.getZoom();
+      if (Math.abs(z - lastZoom) > 0.01) zoomChanged = true;
+      lastZoom = z;
+    };
+    const onZoomEnd = () => {
+      zoomChanged = true;
+      lastZoom = map.getZoom();
     };
     const tick = (now: number) => {
       const dt = (now - last) / 1000;
@@ -2183,25 +2189,27 @@ export function MapView({
         stepWindParticles(canvas, map, slice, windParticlesRef.current, dt, {
           fade: true,
           viewChanged,
-          zoomJumped,
+          zoomChanged,
         });
         viewChanged = false;
-        zoomJumped = false;
+        zoomChanged = false;
       } else if (!slice) {
         clearParticleCanvas(canvas);
         windParticlesRef.current = createParticleField();
         viewChanged = true;
-        zoomJumped = true;
+        zoomChanged = true;
       }
       raf = requestAnimationFrame(tick);
     };
     map.on("movestart", onMoveStart);
     map.on("moveend", onMoveEnd);
+    map.on("zoomend", onZoomEnd);
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
       map.off("movestart", onMoveStart);
       map.off("moveend", onMoveEnd);
+      map.off("zoomend", onZoomEnd);
       clearParticleCanvas(canvas);
     };
   }, [overlay, ready, windGlyph]);

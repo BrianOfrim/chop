@@ -13,20 +13,10 @@ import { fetchHrdpsWind, nearestHourIndex, type WindHour } from "./wind";
 
 export const MAX_COMPARE_LAKES = 4;
 export const COMPARE_CONCURRENCY = 6;
-/** High-contrast, colorblind-safer qualitative set (Okabe–Ito). */
-export const COMPARE_COLORS = ["#0072b2", "#d55e00", "#009e73", "#cc79a7"];
 
 const SELECTED_KEY = "chop.compareLakes";
 
-export type CompareSort = "peakHs" | "nowHs" | "peakWind" | "nowWind";
-
-export const COMPARE_SORT_OPTIONS: Array<{ value: CompareSort; label: string }> =
-  [
-    { value: "peakHs", label: "Peak Hs" },
-    { value: "nowHs", label: "Now Hs" },
-    { value: "peakWind", label: "Peak wind" },
-    { value: "nowWind", label: "Now wind" },
-  ];
+export type CompareSort = "peakHs" | "hs" | "peakWind" | "wind";
 
 export type LakeCompareMeta = {
   id: string;
@@ -85,10 +75,6 @@ export function saveSelectedCompareLakes(ids: string[]): void {
   } catch {
     // ignore quota / private mode
   }
-}
-
-export function compareColor(index: number): string {
-  return COMPARE_COLORS[index % COMPARE_COLORS.length]!;
 }
 
 export async function loadEnabledLakes(): Promise<LakeIndexEntry[]> {
@@ -238,28 +224,49 @@ export async function loadCompareForecasts(
   });
 }
 
-function sortValue(row: LakeCompareRow, sort: CompareSort): number {
+function sortValue(
+  row: LakeCompareRow,
+  sort: CompareSort,
+  atTime?: string,
+): number {
   if (row.status !== "ready") return Number.NEGATIVE_INFINITY;
   switch (sort) {
     case "peakHs":
       return row.peakHs?.hsM ?? Number.NEGATIVE_INFINITY;
-    case "nowHs":
-      return row.now?.hsM ?? Number.NEGATIVE_INFINITY;
+    case "hs":
+      return snapshotAtTime(row, atTime)?.hsM ?? Number.NEGATIVE_INFINITY;
     case "peakWind":
       return row.peakWind?.windSpeedMps ?? Number.NEGATIVE_INFINITY;
-    case "nowWind":
-      return row.now?.windSpeedMps ?? Number.NEGATIVE_INFINITY;
+    case "wind":
+      return snapshotAtTime(row, atTime)?.windSpeedMps ?? Number.NEGATIVE_INFINITY;
   }
+}
+
+export function snapshotAtTime(
+  row: LakeCompareRow,
+  time: string | undefined,
+): HourSnapshot | null {
+  if (row.status !== "ready" || row.hours.length === 0) return null;
+  if (!time) return row.now;
+  let i = row.hours.findIndex((h) => h.time === time);
+  if (i < 0) {
+    const t = Date.parse(time);
+    i = Number.isFinite(t) ? nearestHourIndex(row.hours, t) : -1;
+  }
+  const hour = i >= 0 ? row.hours[i] : undefined;
+  if (!hour) return row.now;
+  return snapshot(hour, row.hsM[i] ?? null);
 }
 
 export function sortCompareRows(
   rows: LakeCompareRow[],
   sort: CompareSort,
+  atTime?: string,
 ): LakeCompareRow[] {
   return [...rows].sort((a, b) => {
     const ready = Number(b.status === "ready") - Number(a.status === "ready");
     if (ready !== 0) return ready;
-    const diff = sortValue(b, sort) - sortValue(a, sort);
+    const diff = sortValue(b, sort, atTime) - sortValue(a, sort, atTime);
     if (diff !== 0) return diff;
     return a.meta.name.localeCompare(b.meta.name);
   });
