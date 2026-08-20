@@ -1,4 +1,4 @@
-import { approxMaxHs, type FetchDirStats } from "@chop/wave-engine";
+import { approxMaxHs, windDurationSec, type FetchDirStats } from "@chop/wave-engine";
 import {
   loadLakeCompareAssets,
   loadLakeIndex,
@@ -112,9 +112,16 @@ export async function loadCompareMetas(
 function hsForHour(
   hour: WindHour,
   stats: FetchDirStats | null,
+  hours: WindHour[],
+  index: number,
 ): number | null {
   if (!stats) return null;
-  return approxMaxHs(hour.windSpeedMps, hour.windDirDeg, stats);
+  return approxMaxHs(
+    hour.windSpeedMps,
+    hour.windDirDeg,
+    stats,
+    windDurationSec(hours, index),
+  );
 }
 
 function snapshot(hour: WindHour, hsM: number | null): HourSnapshot {
@@ -136,7 +143,7 @@ export function summarizeLakeForecast(
   nowMs: number = Date.now(),
 ): Pick<LakeCompareRow, "hours" | "hsM" | "now" | "peakHs" | "peakWind"> {
   const sliced = sliceForecastHours(forecastHours, rangeHours, nowMs);
-  const hsM = sliced.map((h) => hsForHour(h, meta.waveStats));
+  const hsM = sliced.map((h, i) => hsForHour(h, meta.waveStats, sliced, i));
   const nowIndex = nearestHourIndex(sliced, nowMs);
   const nowHour = sliced[nowIndex] ?? null;
   let peakHs: HourSnapshot | null = null;

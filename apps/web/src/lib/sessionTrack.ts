@@ -1,5 +1,6 @@
 import {
   hsAtLonLat,
+  windDurationSec,
   type LakeGrids,
 } from "@chop/wave-engine";
 import { timedTrackPoints, type GpxPoint, type GpxTrack } from "./gpx";
@@ -51,7 +52,14 @@ export function buildSessionSeries(
       timeMs: p.timeMs!,
       lon: p.lon,
       lat: p.lat,
-      hsM: hsAtLonLat(grids, p.lon, p.lat, wind.windSpeedMps, wind.windDirDeg),
+      hsM: hsAtLonLat(
+        grids,
+        p.lon,
+        p.lat,
+        wind.windSpeedMps,
+        wind.windDirDeg,
+        windDurationSec(hours, hourIndex),
+      ),
       speedMps,
       headingDeg,
       pointDeg: pointAngleFromPerp(headingDeg, wind.windDirDeg),

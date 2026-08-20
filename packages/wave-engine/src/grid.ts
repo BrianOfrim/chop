@@ -1,4 +1,7 @@
-import { smbHsDepthLimited } from "./smb.js";
+import { chopHs } from "./hs.js";
+
+/** Half-width of the Saville / CEM effective-fetch sector (deg). */
+export const FETCH_SECTOR_DEG = 45;
 
 export type GridMeta = {
   ncols: number;
@@ -44,19 +47,20 @@ export type FetchDirStats = {
 /**
  * Lake-max Hs estimate from the per-direction fetch/depth summary, without
  * scanning the full grid. Stats pick the water cell that maximizes
- * depth-capped SMB Hs at 10 m/s in each wind-direction bin.
+ * depth-capped chop Hs at 10 m/s in each wind-direction bin.
  */
 export function approxMaxHs(
   uMps: number,
   fromDeg: number,
   stats: FetchDirStats,
+  durationSec?: number,
 ): number {
   const dirs = stats.directionsDeg;
   if (dirs.length === 0) return 0;
   const i = nearestDirIndex(fromDeg, dirs);
   const fetchM = stats.fetchMaxByDirM[i] ?? 0;
   const depthM = stats.depthAtFetchMaxByDirM[i] ?? 0;
-  return smbHsDepthLimited(uMps, fetchM, depthM);
+  return chopHs(uMps, fetchM, depthM, durationSec);
 }
 
 /** Nearest fetch-direction index for a meteorological FROM bearing. */
@@ -105,8 +109,55 @@ export function fetchDirBlend(meta: GridMeta, fromDeg: number): FetchBlend {
   return { i0, i1, w1: d0 / (d0 + d1) };
 }
 
+export type FetchWeights = { idxs: number[]; weights: number[] };
+
 /**
- * Blend fetch from the two nearest direction bins by angular weight.
+ * Cosine-squared effective fetch weights over bins within ±FETCH_SECTOR_DEG
+ * of the wind (Saville / CEM-style). Falls back to two-nearest blend.
+ */
+export function effectiveFetchWeights(
+  meta: GridMeta,
+  fromDeg: number,
+): FetchWeights {
+  const dirs = meta.directionsDeg;
+  const a = ((fromDeg % 360) + 360) % 360;
+  const idxs: number[] = [];
+  const raw: number[] = [];
+  for (let i = 0; i < dirs.length; i++) {
+    let d = Math.abs(a - dirs[i]!) % 360;
+    if (d > 180) d = 360 - d;
+    if (d > FETCH_SECTOR_DEG + 1e-6) continue;
+    const w = Math.cos((d * Math.PI) / 180) ** 2;
+    if (!(w > 0)) continue;
+    idxs.push(i);
+    raw.push(w);
+  }
+  if (idxs.length === 0) {
+    const { i0, i1, w1 } = fetchDirBlend(meta, fromDeg);
+    if (i0 === i1) return { idxs: [i0], weights: [1] };
+    return { idxs: [i0, i1], weights: [1 - w1, w1] };
+  }
+  let sum = 0;
+  for (const w of raw) sum += w;
+  return { idxs, weights: raw.map((w) => w / sum) };
+}
+
+function fetchWeighted(
+  fetch: Float32Array,
+  n: number,
+  cellIndex: number,
+  idxs: number[],
+  weights: number[],
+): number {
+  let f = 0;
+  for (let k = 0; k < idxs.length; k++) {
+    f += fetch[idxs[k]! * n + cellIndex]! * weights[k]!;
+  }
+  return f;
+}
+
+/**
+ * Effective fetch at a cell for a meteorological FROM bearing.
  */
 export function fetchAtDir(
   fetch: Float32Array,
@@ -114,11 +165,8 @@ export function fetchAtDir(
   cellIndex: number,
   fromDeg: number,
 ): number {
-  const { i0, i1, w1 } = fetchDirBlend(meta, fromDeg);
-  const cells = meta.ncols * meta.nrows;
-  const f0 = fetch[i0 * cells + cellIndex]!;
-  const f1 = fetch[i1 * cells + cellIndex]!;
-  return f0 * (1 - w1) + f1 * w1;
+  const { idxs, weights } = effectiveFetchWeights(meta, fromDeg);
+  return fetchWeighted(fetch, meta.ncols * meta.nrows, cellIndex, idxs, weights);
 }
 
 /** Compute Hs (m) for every water cell; land stays NaN. */
@@ -126,23 +174,21 @@ export function computeHsGrid(
   grids: LakeGrids,
   uMps: number,
   fromDeg: number,
+  durationSec?: number,
 ): Float32Array {
   const { meta, depth, fetch } = grids;
   const n = meta.ncols * meta.nrows;
   const out = new Float32Array(n);
   const nodata = meta.nodata;
-  const { i0, i1, w1 } = fetchDirBlend(meta, fromDeg);
-  const base0 = i0 * n;
-  const base1 = i1 * n;
-  const w0 = 1 - w1;
+  const { idxs, weights } = effectiveFetchWeights(meta, fromDeg);
   for (let i = 0; i < n; i++) {
     const d = depth[i]!;
     if (!Number.isFinite(d) || d === nodata || d <= 0) {
       out[i] = Number.NaN;
       continue;
     }
-    const f = fetch[base0 + i]! * w0 + fetch[base1 + i]! * w1;
-    out[i] = smbHsDepthLimited(uMps, f, d);
+    const f = fetchWeighted(fetch, n, i, idxs, weights);
+    out[i] = chopHs(uMps, f, d, durationSec);
   }
   return out;
 }
@@ -203,20 +249,18 @@ export function spatialWindCellIndex(
 function fillHsForWindGroup(
   grids: LakeGrids,
   out: Float32Array,
-  idxs: number[],
+  cellIdxs: number[],
   uMps: number,
   fromDeg: number,
+  durationSec?: number,
 ): void {
   const { meta, depth, fetch } = grids;
   const n = meta.ncols * meta.nrows;
-  const { i0, i1, w1 } = fetchDirBlend(meta, fromDeg);
-  const base0 = i0 * n;
-  const base1 = i1 * n;
-  const w0 = 1 - w1;
-  for (const idx of idxs) {
+  const { idxs, weights } = effectiveFetchWeights(meta, fromDeg);
+  for (const idx of cellIdxs) {
     const d = depth[idx]!;
-    const f = fetch[base0 + idx]! * w0 + fetch[base1 + idx]! * w1;
-    out[idx] = smbHsDepthLimited(uMps, f, d);
+    const f = fetchWeighted(fetch, n, idx, idxs, weights);
+    out[idx] = chopHs(uMps, f, d, durationSec);
   }
 }
 
@@ -228,12 +272,13 @@ function fillHsForWindGroup(
 export function computeHsGridFromWind(
   grids: LakeGrids,
   wind: SpatialWindGrid,
+  durationSec?: number,
 ): Float32Array {
   if (wind.uniform) {
     const u = wind.speed[0];
     const dir = wind.dir[0];
     if (u != null && dir != null && Number.isFinite(u) && Number.isFinite(dir)) {
-      return computeHsGrid(grids, u, dir);
+      return computeHsGrid(grids, u, dir, durationSec);
     }
   }
   const { meta, depth } = grids;
@@ -277,7 +322,7 @@ export function computeHsGridFromWind(
   }
 
   for (const g of groups.values()) {
-    fillHsForWindGroup(grids, out, g.idxs, g.u, g.dir);
+    fillHsForWindGroup(grids, out, g.idxs, g.u, g.dir, durationSec);
   }
   return out;
 }
@@ -287,6 +332,7 @@ export function approxMaxHsOverWind(
   stats: FetchDirStats,
   wind: SpatialWindGrid,
   bbox: LonLatBounds,
+  durationSec?: number,
 ): number {
   if (wind.uniform) {
     const u = wind.speed[0];
@@ -294,7 +340,7 @@ export function approxMaxHsOverWind(
     if (u == null || dir == null || !Number.isFinite(u) || !Number.isFinite(dir)) {
       return 0;
     }
-    return approxMaxHs(u, dir, stats);
+    return approxMaxHs(u, dir, stats, durationSec);
   }
   const a = spatialWindCellIndex(wind, bbox.west, bbox.south);
   const b = spatialWindCellIndex(wind, bbox.east, bbox.north);
@@ -322,7 +368,7 @@ export function approxMaxHsOverWind(
       const u = wind.speed[idx]!;
       const dir = wind.dir[idx]!;
       if (!Number.isFinite(u) || !Number.isFinite(dir)) continue;
-      const hs = approxMaxHs(u, dir, stats);
+      const hs = approxMaxHs(u, dir, stats, durationSec);
       if (hs > max) max = hs;
     }
   }
@@ -372,13 +418,14 @@ export function hsAtLonLat(
   lat: number,
   uMps: number,
   fromDeg: number,
+  durationSec?: number,
 ): number | null {
   const i = nearestWaterCellIndex(grids.depth, grids.meta, lon, lat);
   if (i == null) return null;
   const d = grids.depth[i]!;
   if (!(d > 0)) return null;
   const f = fetchAtDir(grids.fetch, grids.meta, i, fromDeg);
-  return smbHsDepthLimited(uMps, f, d);
+  return chopHs(uMps, f, d, durationSec);
 }
 
 /** Sample grid value at lon/lat (bilinear for depth/Hs; returns null off-grid / land). */

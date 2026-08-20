@@ -3,7 +3,7 @@ export const G = 9.81;
 
 /**
  * Sverdrup–Munk–Bretschneider fetch-limited significant wave height (m).
- * Matches the method used for Pigeon Lake wave maps.
+ * Legacy deep-water curve; production maps use Young–Verhagen in `chopHs`.
  */
 export function smbHs(uMps: number, fetchM: number): number {
   if (!(uMps > 0) || !(fetchM > 0)) return 0;

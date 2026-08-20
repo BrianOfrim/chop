@@ -30,8 +30,8 @@ import {
   hsCanvasSize,
   paintHsClipped,
 } from "../lib/shoreMask";
-import { formatWind, formatWindMapLabel, type WindHour } from "../lib/wind";
-import { windColorRgb, WIND_COLOR_MAX_MPS } from "../lib/windScale";
+import { formatWind, type WindHour } from "../lib/wind";
+import { WIND_COLOR_MAX_MPS } from "../lib/windScale";
 import {
   inWindFieldExtent,
   sampleWindField,
@@ -49,6 +49,7 @@ import {
   clearParticleCanvas,
   createParticleField,
   drawWindArrows,
+  layoutWindArrows,
   prefersReducedWindMotion,
   stepWindParticles,
   WIND_STREAK_COLOR,
@@ -69,14 +70,23 @@ import {
 import { DEFAULT_DEPTH_SCALE, DEFAULT_TEMP_SCALE, DEFAULT_WAVE_SCALE, DEFAULT_WIND_SCALE, sampleRgb, scaleGradientCss, type ColorScaleId } from "../lib/colorScales";
 import type { GpxTrack } from "../lib/gpx";
 import {
-  fetchRadarTime,
-  formatRadarWhen,
+  fetchRadarWindows,
+  formatRadarLegend,
+  formatRadarRate,
+  formatRadarTick,
   RADAR_ATTRIBUTION,
+  RADAR_LEGEND_TICK_RATES,
+  RADAR_OBS_LAYERS,
   RADAR_POLL_MS,
   RADAR_RAIN_SOURCE,
-  RADAR_WMS_LAYERS,
+  radarLegendGradientCss,
   radarTileUrl,
+  resolveRadarFrame,
+  sampleRadarLegend,
+  type RadarFrame,
+  type RadarWindows,
 } from "../lib/radar";
+import type { WindMode } from "../lib/historyRange";
 import {
   sampleTempField,
   type TempFieldSlice,
@@ -180,9 +190,16 @@ type Props = {
   onSelectLake?: (id: string) => void;
   depthContours?: GeoJSON.FeatureCollection | null;
   wind: WindHour | null;
+  /** Wind-event duration (s); omit for fetch-limited / sim. */
+  durationSec?: number;
   units: UnitPrefs;
   simulating?: boolean;
   historic?: boolean;
+  /** Selected forecast / history / session timestamp (ISO). */
+  selectedTime?: string | null;
+  /** Forecast scrubber is on the hour nearest to now — follow latest observed radar. */
+  radarFollowLive?: boolean;
+  clockMode?: WindMode;
   forecastPoint?: ForecastPoint | null;
   gpxTrack?: GpxTrack | null;
   /** Moving cursor along an uploaded track (session scrubber). */
@@ -396,13 +413,11 @@ function setRasterTiles(map: MapLibreMap, sourceId: string, tiles: string[]): vo
 }
 
 /** Live ECCC radar above heatmaps, under lake outlines. Independent of overlay. */
-function ensureRadarLayers(
-  map: MapLibreMap,
-  timeIso: string | null,
-  visible: boolean,
-): void {
-  for (const { sourceId, wmsLayer } of RADAR_WMS_LAYERS) {
-    const tiles = [radarTileUrl(wmsLayer, timeIso)];
+function ensureRadarLayers(map: MapLibreMap, frame: RadarFrame): void {
+  const visible = frame.kind !== "none" && !!frame.timeIso;
+  for (const { sourceId, wmsLayer } of frame.layers) {
+    if (!visible && !map.getSource(sourceId)) continue;
+    const tiles = [radarTileUrl(wmsLayer, frame.timeIso)];
     if (!map.getSource(sourceId)) {
       map.addSource(sourceId, {
         type: "raster",
@@ -425,7 +440,7 @@ function ensureRadarLayers(
       placeHeatmapUnderLakes(map, sourceId);
       continue;
     }
-    setRasterTiles(map, sourceId, tiles);
+    if (visible) setRasterTiles(map, sourceId, tiles);
     if (map.getLayer(sourceId)) {
       map.setLayoutProperty(
         sourceId,
@@ -437,8 +452,16 @@ function ensureRadarLayers(
   map.triggerRepaint();
 }
 
+function hideRadarLayers(map: MapLibreMap): void {
+  for (const { sourceId } of RADAR_OBS_LAYERS) {
+    if (map.getLayer(sourceId)) {
+      map.setLayoutProperty(sourceId, "visibility", "none");
+    }
+  }
+}
+
 function removeRadarLayers(map: MapLibreMap): void {
-  for (const { sourceId } of [...RADAR_WMS_LAYERS].reverse()) {
+  for (const { sourceId } of [...RADAR_OBS_LAYERS].reverse()) {
     if (map.getLayer(sourceId)) map.removeLayer(sourceId);
     if (map.getSource(sourceId)) map.removeSource(sourceId);
   }
@@ -814,20 +837,6 @@ function lakeOutlineGeoJSON(
 }
 
 const ALBERTA_MASK = albertaMask as GeoJSON.FeatureCollection;
-const WIND_LABEL_PX = 18;
-
-/** Keep the speed label below the 128px arrow icon at any zoom / rotation. */
-function windLabelOffsetEms(zoom: number): [number, number] {
-  const iconSize = 0.85 * 2 ** (zoom - 11);
-  return [0, (64 * iconSize) / WIND_LABEL_PX + 0.55];
-}
-
-/** Place the wind arrow just east of the lake so it does not cover the Hs field. */
-function windArrowLngLat(meta: LakeGrids["meta"]): [number, number] {
-  const midLat = (meta.north + meta.south) / 2;
-  const width = Math.max(meta.east - meta.west, 0.01);
-  return [meta.east + width * 0.16, midLat];
-}
 
 /** Destination lon/lat after traveling `distanceM` along compass bearing (deg from N). */
 function destinationLngLat(
@@ -1228,9 +1237,13 @@ export function MapView({
   onSelectLake,
   depthContours = null,
   wind,
+  durationSec,
   units,
   simulating = false,
   historic = false,
+  selectedTime = null,
+  radarFollowLive = false,
+  clockMode = "forecast",
   forecastPoint = null,
   gpxTrack = null,
   gpxCursor = null,
@@ -1253,6 +1266,7 @@ export function MapView({
   const windParticleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lakeOutlineCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windParticlesRef = useRef(createParticleField());
+  const arrowLayoutRef = useRef<GeoJSON.FeatureCollection | null>(null);
   const albertaWindMaskRef = useRef<HTMLCanvasElement | null>(null);
   const shoreMaskRef = useRef<HTMLCanvasElement | null>(null);
   const hsRef = useRef<Float32Array | null>(null);
@@ -1292,6 +1306,9 @@ export function MapView({
     typeof window !== "undefined" ? loadOverlay() : "wind",
   );
   const [legendHoverT, setLegendHoverT] = useState<number | null>(null);
+  const [radarLegendHoverT, setRadarLegendHoverT] = useState<number | null>(
+    null,
+  );
   const [legendTipOpen, setLegendTipOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const layersRef = useRef<HTMLDivElement>(null);
@@ -1304,7 +1321,10 @@ export function MapView({
   const [radarOn, setRadarOn] = useState(() =>
     typeof window !== "undefined" ? loadRadar() : false,
   );
-  const [radarTime, setRadarTime] = useState<string | null>(null);
+  const [radarFrame, setRadarFrame] = useState<RadarFrame>(() =>
+    resolveRadarFrame(null, null),
+  );
+  const radarWindowsRef = useRef<RadarWindows | null>(null);
   const [fieldHeatmapReady, setFieldHeatmapReady] = useState(false);
   const overlayRef = useRef(overlay);
   const windGlyphRef = useRef(windGlyph);
@@ -1330,22 +1350,48 @@ export function MapView({
     if (!map || !ready) return;
     if (!radarOn) {
       removeRadarLayers(map);
-      setRadarTime(null);
+      radarWindowsRef.current = null;
+      setRadarFrame(resolveRadarFrame(null, null));
       return;
     }
-    let cancelled = false;
-    const sync = async () => {
-      let time: string | null = null;
-      try {
-        time = await fetchRadarTime();
-      } catch (err) {
-        console.error("Radar time failed", err);
-      }
-      if (cancelled) return;
+    const selectedMs = (() => {
+      if (!selectedTime) return null;
+      const t = Date.parse(selectedTime);
+      return Number.isFinite(t) ? t : null;
+    })();
+    const apply = (windows: RadarWindows | null) => {
       const live = mapRef.current;
       if (!live) return;
-      ensureRadarLayers(live, time, true);
-      setRadarTime(time);
+      if (clockMode === "sim") {
+        hideRadarLayers(live);
+        setRadarFrame(resolveRadarFrame(null, null));
+        return;
+      }
+      const frame = resolveRadarFrame(
+        selectedMs,
+        windows,
+        radarFollowLive && clockMode === "forecast",
+      );
+      ensureRadarLayers(live, frame);
+      setRadarFrame(frame);
+    };
+    if (clockMode === "sim") {
+      apply(null);
+      return;
+    }
+    if (radarWindowsRef.current) apply(radarWindowsRef.current);
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const windows = await fetchRadarWindows();
+        if (cancelled) return;
+        radarWindowsRef.current = windows;
+        apply(windows);
+      } catch (err) {
+        console.error("Radar time failed", err);
+        if (cancelled) return;
+        apply(radarWindowsRef.current);
+      }
     };
     void sync();
     const id = window.setInterval(() => void sync(), RADAR_POLL_MS);
@@ -1358,7 +1404,7 @@ export function MapView({
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [radarOn, ready]);
+  }, [radarOn, ready, selectedTime, radarFollowLive, clockMode]);
 
   gridsRef.current = grids;
   shorelineRef.current = shoreline;
@@ -1366,10 +1412,10 @@ export function MapView({
   const hs = useMemo(() => {
     if (!wind || overlay !== "waves") return null;
     if (windSlice && !windSlice.uniform) {
-      return computeHsGridFromWind(grids, windSlice);
+      return computeHsGridFromWind(grids, windSlice, durationSec);
     }
-    return computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
-  }, [grids, wind, overlay, windSlice]);
+    return computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg, durationSec);
+  }, [grids, wind, overlay, windSlice, durationSec]);
 
   hsRef.current = hs;
   windRef.current = wind;
@@ -1683,52 +1729,6 @@ export function MapView({
         map.addImage("wind-arrow", makeArrowIcon(128), { sdf: true });
       }
 
-      map.addSource("wind-dir", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-      map.addLayer({
-        id: "wind-dir",
-        type: "symbol",
-        source: "wind-dir",
-        layout: {
-          visibility: showsWindGlyphs(overlay) ? "none" : "visible",
-          "icon-image": "wind-arrow",
-          "icon-size": [
-            "interpolate",
-            ["exponential", 2],
-            ["zoom"],
-            9,
-            0.21,
-            11,
-            0.85,
-            13,
-            3.4,
-            15,
-            13.6,
-          ],
-          "icon-rotate": ["get", "bearing"],
-          "icon-rotation-alignment": "map",
-          "icon-pitch-alignment": "map",
-          "icon-allow-overlap": true,
-          "icon-ignore-placement": true,
-          "text-field": ["get", "label"],
-          "text-size": WIND_LABEL_PX,
-          "text-anchor": "top",
-          "text-offset": windLabelOffsetEms(map.getZoom()),
-          "text-allow-overlap": true,
-          "text-ignore-placement": true,
-        },
-        paint: {
-          "icon-color": ["get", "color"],
-          "icon-halo-color": "rgba(255,255,255,0.92)",
-          "icon-halo-width": 1.4,
-          "text-color": ["get", "color"],
-          "text-halo-color": "rgba(255,255,255,0.92)",
-          "text-halo-width": 1.8,
-        },
-      });
-
       map.addSource("wind-arrows", { type: "geojson", data: EMPTY_FC });
 
       map.addSource("gpx-track", { type: "geojson", data: EMPTY_FC });
@@ -2026,12 +2026,6 @@ export function MapView({
       setHover(null);
     });
 
-    const syncWindLabelOffset = () => {
-      if (!map.getLayer("wind-dir")) return;
-      map.setLayoutProperty("wind-dir", "text-offset", windLabelOffsetEms(map.getZoom()));
-    };
-    map.on("zoom", syncWindLabelOffset);
-
     let lastW = 0;
     let lastH = 0;
     const refitIfNeeded = () => {
@@ -2280,6 +2274,10 @@ export function MapView({
   }, [overlay, depthContours, ready, spot.spotId, selectedLakeId]);
 
   useEffect(() => {
+    setFieldHeatmapReady(false);
+  }, [overlay]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const showHeatmap = showsFieldHeatmap(overlay);
@@ -2314,9 +2312,6 @@ export function MapView({
     if (map.getLayer("lakes-all-line")) map.moveLayer("lakes-all-line");
     if (map.getLayer("lakes-labels")) map.moveLayer("lakes-labels");
     if (showGlyphs && map.getLayer("wind-arrows")) map.moveLayer("wind-arrows");
-    if (map.getLayer("wind-dir")) {
-      map.setLayoutProperty("wind-dir", "visibility", showGlyphs ? "none" : "visible");
-    }
   }, [overlay, ready, spot.spotId, selectedLakeId, windGlyph, heatmapStyle]);
 
   useEffect(() => {
@@ -2383,7 +2378,6 @@ export function MapView({
         console.error("Wind arrows failed", err);
       }
     };
-    setFieldHeatmapReady(false);
     apply();
     map.on("zoomend", applyArrows);
     return () => {
@@ -2463,56 +2457,45 @@ export function MapView({
     const map = mapRef.current;
     const canvas = windParticleCanvasRef.current;
     if (!map || !ready || !canvas) return;
-    if (!showsWindGlyphs(overlay) || windGlyph !== "arrows") return;
-    const draw = () => {
+    if (!showsWindGlyphs(overlay) || windGlyph !== "arrows") {
+      arrowLayoutRef.current = null;
+      return;
+    }
+    const layoutAtZoom = (zoom: number) => {
       const slice = spatialWindSlice(
         windSliceRef.current,
         simulatingRef.current,
       );
       if (!slice) {
+        arrowLayoutRef.current = null;
         clearParticleCanvas(canvas);
         return;
       }
-      drawWindArrows(canvas, map, slice);
+      arrowLayoutRef.current = layoutWindArrows(slice, zoom);
     };
-    draw();
-    map.on("move", draw);
-    map.on("resize", draw);
+    const paint = () => {
+      const fc = arrowLayoutRef.current;
+      if (!fc) {
+        clearParticleCanvas(canvas);
+        return;
+      }
+      drawWindArrows(canvas, map, fc);
+    };
+    const onZoomEnd = () => {
+      layoutAtZoom(map.getZoom());
+      paint();
+    };
+    layoutAtZoom(map.getZoom());
+    paint();
+    map.on("move", paint);
+    map.on("resize", paint);
+    map.on("zoomend", onZoomEnd);
     return () => {
-      map.off("move", draw);
-      map.off("resize", draw);
+      map.off("move", paint);
+      map.off("resize", paint);
+      map.off("zoomend", onZoomEnd);
     };
   }, [overlay, ready, windGlyph, windSlice, simulating]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-    const src = map.getSource("wind-dir") as GeoJSONSource | undefined;
-    if (!src) return;
-    if (!wind || spot.spotId !== selectedLakeId || showsWindGlyphs(overlay)) {
-      src.setData({ type: "FeatureCollection", features: [] });
-      return;
-    }
-    // Arrow offset east of the lake; points where the wind is going (TO)
-    const toBearing = (wind.windDirDeg + 180) % 360;
-    src.setData({
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          properties: {
-            bearing: toBearing,
-            label: formatWindMapLabel(wind.windSpeedMps, wind.gustMps, units.wind),
-            color: windColorRgb(wind.windSpeedMps),
-          },
-          geometry: {
-            type: "Point",
-            coordinates: windArrowLngLat(grids.meta),
-          },
-        },
-      ],
-    });
-  }, [wind, ready, grids.meta, units.wind, spot.spotId, selectedLakeId, overlay]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2683,25 +2666,25 @@ export function MapView({
                     ? `GEM 10 m over Alberta (HRDPS, then RDPS / GDPS). Color = speed; ${windGlyph === "arrows" ? "arrows" : "particles"} = direction.`
                     : "No provincial wind field this hour."
             : simulating
-              ? "SMB fetch-limited + depth cap. Wind: simulator."
+              ? "Young–Verhagen + effective fetch (steady wind). Wind: simulator."
               : gpxCursor
-                ? "SMB fetch-limited + depth cap. Wind: HRDPS (session)."
+                ? "Young–Verhagen + effective fetch + duration. Wind: HRDPS (session)."
                 : historic
-                  ? "SMB fetch-limited + depth cap. Wind: HRDPS (history)."
-                  : "SMB fetch-limited + depth cap. Wind: HRDPS ~48 h, then RDPS / GDPS.";
+                  ? "Young–Verhagen + effective fetch + duration. Wind: HRDPS (history)."
+                  : "Young–Verhagen + effective fetch + duration. Wind: HRDPS ~48 h, then RDPS / GDPS.";
     const hint =
       overlay === "wind" || overlay === "temp"
         ? "Click a lake to select it."
         : forecastPoint
           ? null
           : "Click the lake to pin a forecast spot.";
-    const radar =
-      radarOn && radarTime
-        ? `Radar is ECCC now-cast (${formatRadarWhen(radarTime)}), not the selected forecast hour.`
-        : radarOn
-          ? "Radar is ECCC now-cast (latest 6-min composite), not the selected forecast hour."
-          : null;
-    return [source, hint, radar].filter((line): line is string => !!line);
+    const radar = radarOn ? formatRadarLegend(radarFrame) : null;
+    const radarScale = radarOn
+      ? "Radar colors are ECCC precip rate (rain mm/h, snow cm/h)."
+      : null;
+    return [source, hint, radar, radarScale].filter(
+      (line): line is string => !!line,
+    );
   }, [
     overlay,
     depthIntervalM,
@@ -2715,7 +2698,7 @@ export function MapView({
     historic,
     forecastPoint,
     radarOn,
-    radarTime,
+    radarFrame,
   ]);
 
   const fieldSliceReady =
@@ -3003,6 +2986,63 @@ export function MapView({
             </span>
           ))}
         </div>
+        {radarOn ? (
+          <div className="legend-radar">
+            <div className="legend-title">
+              <span>Radar (mm/h)</span>
+            </div>
+            <div
+              className="legend-bar-hit"
+              onPointerMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (rect.width <= 0) return;
+                setRadarLegendHoverT(
+                  Math.max(
+                    0,
+                    Math.min(1, (e.clientX - rect.left) / rect.width),
+                  ),
+                );
+              }}
+              onPointerLeave={() => setRadarLegendHoverT(null)}
+            >
+              <div
+                className="legend-bar"
+                style={{ background: radarLegendGradientCss() }}
+              />
+              {radarLegendHoverT != null && (
+                <>
+                  <span
+                    className="legend-bar-marker"
+                    style={{ left: `${radarLegendHoverT * 100}%` }}
+                  />
+                  <span
+                    className={`legend-bar-readout${
+                      radarLegendHoverT < 0.12
+                        ? " is-start"
+                        : radarLegendHoverT > 0.88
+                          ? " is-end"
+                          : ""
+                    }`}
+                    style={{ left: `${radarLegendHoverT * 100}%` }}
+                  >
+                    <span
+                      className="legend-bar-swatch"
+                      style={{
+                        background: `rgb(${sampleRadarLegend(radarLegendHoverT).rgb.join(",")})`,
+                      }}
+                    />
+                    {formatRadarRate(sampleRadarLegend(radarLegendHoverT).rate)}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="legend-scale">
+              {RADAR_LEGEND_TICK_RATES.map((rate) => (
+                <span key={rate}>{formatRadarTick(rate)}</span>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {forecastPoint ? (
           <button type="button" className="legend-pin-btn" onClick={() => onClearPoint?.()}>
             Pinned spot · Clear

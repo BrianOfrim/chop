@@ -4,7 +4,7 @@ Used by lake builders and the one-shot patcher so compare ranking can estimate
 lake-max Hs without loading full depth/fetch binaries in the browser.
 
 For each wind-direction bin we store fetch and depth at the water cell that
-maximizes depth-capped SMB Hs at a 10 m/s reference wind. That is a better
+maximizes Young–Verhagen Hs at a 10 m/s reference wind. That is a better
 proxy for lake-max chop than the raw longest-fetch cell, which is often a
 shallow shoreline pixel.
 """
@@ -20,16 +20,30 @@ NODATA = -1.0
 G = 9.81
 # Same representative open-water wind used to pick the per-dir cell.
 U_REF_MPS = 10.0
+YV_EPS_MAX = 3.64e-3
+YV_A1 = 0.493
+YV_B1 = 3.13e-3
 
 
-def smb_hs_depth_limited(u_mps: float, fetch_m: np.ndarray, depth_m: np.ndarray) -> np.ndarray:
+def yv_hs(u_mps: float, fetch_m: np.ndarray, depth_m: np.ndarray) -> np.ndarray:
     u = float(u_mps)
-    fetch = np.maximum(fetch_m.astype(np.float64), 1.0)
+    u2 = u * u
+    fetch = np.maximum(fetch_m.astype(np.float64), 0.0)
+    depth = np.maximum(depth_m.astype(np.float64), 0.0)
+    chi = np.divide(G * fetch, u2)
+    delta = np.divide(G * depth, u2)
+    tanh_a1 = np.tanh(YV_A1 * np.power(delta, 0.75))
+    b1 = YV_B1 * np.power(np.maximum(chi, 0.0), 0.57)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        inner = np.tanh(np.divide(b1, np.maximum(tanh_a1, 1e-15)))
+    eps = YV_EPS_MAX * (tanh_a1 * inner) ** 2
+    hs = 4.0 * (u2 / G) * np.sqrt(np.maximum(eps, 0.0))
+    return np.where((u > 0) & (fetch_m > 0) & (depth_m > 0), hs, 0.0)
+
+
+def chop_hs(u_mps: float, fetch_m: np.ndarray, depth_m: np.ndarray) -> np.ndarray:
     depth = np.maximum(depth_m.astype(np.float64), 0.5)
-    dim = (G * fetch) / (u * u)
-    hs = 0.283 * ((u * u) / G) * np.tanh(0.0125 * np.power(dim, 0.42))
-    hs = np.where((u > 0) & (fetch_m > 0), hs, 0.0)
-    return np.minimum(hs, 0.4 * depth)
+    return np.minimum(yv_hs(u_mps, fetch_m, depth_m), 0.4 * depth)
 
 
 def fetch_dir_max_stats(
@@ -40,7 +54,7 @@ def fetch_dir_max_stats(
 ) -> tuple[list[float], list[float]]:
     """Return (fetchMaxByDirM, depthAtFetchMaxByDirM) for each fetch band.
 
-    For each direction, pick the water cell that maximizes depth-capped SMB Hs
+    For each direction, pick the water cell that maximizes Young–Verhagen Hs
     at 10 m/s, then store that cell's fetch and depth.
 
     depth: (nrows, ncols)
@@ -55,7 +69,7 @@ def fetch_dir_max_stats(
     depth_flat = depth.ravel()
     for d in range(n_dirs):
         band = fetch[d]
-        hs = np.where(mask, smb_hs_depth_limited(U_REF_MPS, band, depth), -np.inf)
+        hs = np.where(mask, chop_hs(U_REF_MPS, band, depth), -np.inf)
         flat = int(np.argmax(hs))
         if not np.isfinite(hs.ravel()[flat]):
             fetch_max.append(0.0)

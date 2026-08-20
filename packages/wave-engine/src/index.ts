@@ -5,13 +5,28 @@ export {
   smbHsDepthLimited,
 } from "./smb.js";
 export {
+  yvHs,
+  equivalentFetchM,
+  durationLimitedFetchM,
+  chopHs,
+  angularDiffDeg,
+  sameWindEvent,
+  windDurationSec,
+  WIND_EVENT_DIR_TOL_DEG,
+  WIND_EVENT_MIN_SPEED_FRAC,
+  type WindHourLike,
+} from "./hs.js";
+export {
   type GridMeta,
   type LakeGrids,
   type FetchDirStats,
   type SpatialWindGrid,
   type LonLatBounds,
+  type FetchWeights,
+  FETCH_SECTOR_DEG,
   nearestDirIndex,
   fetchDirBlend,
+  effectiveFetchWeights,
   fetchAtDir,
   approxMaxHs,
   approxMaxHsOverWind,

@@ -1,5 +1,5 @@
 import type { WindSpeedUnit } from "./units";
-import { formatWindSpeed, mpsToWind, windUnitLabel } from "./units";
+import { formatWindSpeed, mpsToWind } from "./units";
 
 export type WindHour = {
   time: string;
@@ -201,18 +201,4 @@ export function formatWind(
       ? ` G${mpsToWind(gustMps, unit).toFixed(digits)}`
       : "";
   return `${formatWindSpeed(mps, unit)}${gust} from ${cardinalFromDeg(fromDeg)} (${fromDeg.toFixed(0)}°)`;
-}
-
-/** Compact label for the map wind arrow (mean + gust). */
-export function formatWindMapLabel(
-  mps: number,
-  gustMps?: number | null,
-  unit: WindSpeedUnit = "kt",
-): string {
-  const digits = unit === "mps" ? 1 : 0;
-  const mean = `${mpsToWind(mps, unit).toFixed(digits)} ${windUnitLabel(unit)}`;
-  if (gustMps != null && Number.isFinite(gustMps)) {
-    return `${mean} G${mpsToWind(gustMps, unit).toFixed(digits)}`;
-  }
-  return mean;
 }

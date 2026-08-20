@@ -3,6 +3,7 @@ import {
   approxMaxHs,
   computeHsGrid,
   hsAtLonLat,
+  windDurationSec,
   type LakeGrids,
 } from "@chop/wave-engine";
 import { hsColor, HS_COLOR_MAX_M } from "../lib/hsOverlay";
@@ -81,7 +82,8 @@ export function WaveChart({
       return hsMSeriesProp.map((m) => (m != null && Number.isFinite(m) ? m : 0));
     }
     if (!grids) return hours.map(() => 0);
-    return hours.map((h) => {
+    return hours.map((h, i) => {
+      const durationSec = windDurationSec(hours, i);
       if (sampleAt) {
         return (
           hsAtLonLat(
@@ -90,6 +92,7 @@ export function WaveChart({
             sampleAt.lat,
             h.windSpeedMps,
             h.windDirDeg,
+            durationSec,
           ) ?? 0
         );
       }
@@ -98,9 +101,10 @@ export function WaveChart({
           h.windSpeedMps,
           h.windDirDeg,
           grids.waveStats,
+          durationSec,
         );
       }
-      const hs = computeHsGrid(grids, h.windSpeedMps, h.windDirDeg);
+      const hs = computeHsGrid(grids, h.windSpeedMps, h.windDirDeg, durationSec);
       return maxHsM(hs);
     });
   }, [grids, hours, sampleAt, hsMSeriesProp]);

@@ -25,7 +25,8 @@ const OCCUPANCY_CELL_PX = 26;
 const HEAD_R = 1.15;
 export const WIND_STREAK_RGB = "168,172,176";
 export const WIND_STREAK_COLOR = `rgb(${WIND_STREAK_RGB})`;
-const GREY = WIND_STREAK_RGB;
+/** Lighter than the arrow streaks so moving particles read on the heatmap. */
+const PARTICLE_RGB = "232,236,240";
 const FADE_OUT_SEC = 0.9;
 
 export function prefersReducedWindMotion(): boolean {
@@ -155,7 +156,7 @@ function drawComet(
     ctx.beginPath();
     ctx.moveTo(pts[i]!.x, pts[i]!.y);
     ctx.lineTo(pts[i + 1]!.x, pts[i + 1]!.y);
-    ctx.strokeStyle = `rgba(${GREY},${(0.03 + 0.38 * fade) * opacity})`;
+    ctx.strokeStyle = `rgba(${PARTICLE_RGB},${(0.08 + 0.52 * fade) * opacity})`;
     ctx.lineWidth = 0.21 + 1.33 * t;
     ctx.stroke();
   }
@@ -171,15 +172,15 @@ function drawHead(
   opacity: number,
 ): void {
   ctx.beginPath();
-  ctx.fillStyle = `rgba(${GREY},${0.22 * opacity})`;
+  ctx.fillStyle = `rgba(${PARTICLE_RGB},${0.32 * opacity})`;
   ctx.arc(x, y, HEAD_R * 2.05, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.fillStyle = `rgba(${GREY},${0.55 * opacity})`;
+  ctx.fillStyle = `rgba(${PARTICLE_RGB},${0.7 * opacity})`;
   ctx.arc(x, y, HEAD_R * 1.35, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.fillStyle = `rgba(${GREY},${opacity})`;
+  ctx.fillStyle = `rgba(${PARTICLE_RGB},${opacity})`;
   ctx.arc(x, y, HEAD_R, 0, Math.PI * 2);
   ctx.fill();
 }
@@ -357,17 +358,24 @@ export function stepWindParticles(
   return true;
 }
 
-/** Static wind arrows on the glyph canvas so they sit above MapLibre heatmaps. */
+/** Geographic arrow layout for a zoom. Rebuild on zoomend, not every move. */
+export function layoutWindArrows(
+  slice: WindFieldSlice,
+  zoom: number,
+): GeoJSON.FeatureCollection {
+  return windArrowsGeoJSON(slice, zoom);
+}
+
+/** Paint a cached arrow layout. Safe to call on pan; does not relayout. */
 export function drawWindArrows(
   canvas: HTMLCanvasElement,
   map: MapLibreMap,
-  slice: WindFieldSlice,
+  fc: GeoJSON.FeatureCollection,
 ): void {
   const synced = syncParticleCanvas(canvas, map);
   if (!synced) return;
   const { ctx, width, height } = synced;
   ctx.clearRect(0, 0, width, height);
-  const fc = windArrowsGeoJSON(slice, map.getZoom());
   ctx.strokeStyle = WIND_STREAK_COLOR;
   ctx.lineWidth = 1.7;
   ctx.lineCap = "round";

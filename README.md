@@ -2,7 +2,7 @@
 
 Inland lake **wave height** map (with wind as a secondary overlay), starting with **Pigeon Lake**, Alberta.
 
-Wave height is the hero layer: significant wave height (`Hs`) from a fetch-limited SMB model + depth cap, driven by Environment Canada **HRDPS** wind via Open-Meteo. Wind arrows and a mid-lake readout sit on top.
+Wave height is the hero layer: significant wave height (`Hs`) from a Young–Verhagen finite-depth model, cosine-squared effective fetch, and an optional duration cap from HRDPS wind history, driven by Environment Canada **HRDPS** wind via Open-Meteo. Wind arrows and a mid-lake readout sit on top.
 
 ## Quick start
 
@@ -23,7 +23,7 @@ Strava: create an API app at https://www.strava.com/settings/api with Authorizat
 |------|------|
 | `apps/web/` | MapLibre + React UI |
 | `apps/api/` | Localhost Strava OAuth + activity proxy |
-| `packages/wave-engine/` | SMB `Hs` + depth-cap (TypeScript) |
+| `packages/wave-engine/` | Young–Verhagen `Hs` + duration + depth-cap (TypeScript) |
 | `data/lakes/{spotId}/` | Per-lake shoreline, depth, fetch grids, spot profile |
 | `scripts/build-lake-assets.py` | Build web assets from GIS (AGS DEM + shoreline) |
 
@@ -46,10 +46,10 @@ Source bathymetry/shoreline: **AGS DIG 2008-0490** and **DIG 2008-0828** under t
 ## How waves are computed
 
 1. Precompute water depth and **16-direction fetch** on a ~50 m grid.
-2. At runtime, take HRDPS 10 m wind speed & meteorological FROM direction.
-3. For each water cell: `Hs = SMB(U, fetch)` then `Hs = min(Hs, 0.4 × depth)`.
+2. At runtime, take HRDPS 10 m wind speed & meteorological FROM direction, plus how long that wind event has lasted in the hourly series.
+3. For each water cell: effective fetch = cosine-squared blend of bins within ±45°, then `Hs = Young–Verhagen(U, min(fetch, duration-fetch), depth)`, then `Hs = min(Hs, 0.4 × depth)`.
 
-This is a shallow-lake engineering estimate, not WW3. Good for relative “where’s the chop?” maps.
+This is a shallow-lake engineering estimate, not WW3. Good for relative “where’s the chop?” maps. Simulator mode stays fetch-limited (steady wind).
 
 ## Add another lake
 

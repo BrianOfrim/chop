@@ -56,6 +56,8 @@ import {
   approxMaxHsOverWind,
   computeHsGrid,
   hsAtLonLat,
+  windDurationSec,
+  type LakeGrids,
 } from "@chop/wave-engine";
 import { formatSelectedWhen, sliderInsetStyle } from "./lib/forecastChart";
 import { WindSimPanel } from "./components/WindSimPanel";
@@ -795,14 +797,20 @@ export default function App() {
       if (forecastWindStatus === "loading") return null;
       const range = sessionDateRange(gpxTrack);
       if (!range) return null;
-      const t = sessionSample?.time ?? gpxTrack.startTime;
-      if (t && forecastWindField && sliceWindField(forecastWindField, t)) {
+      const t0 = gpxTrack.startTime;
+      const t1 = gpxTrack.endTime ?? gpxTrack.startTime;
+      if (
+        t0 &&
+        forecastWindField &&
+        sliceWindField(forecastWindField, t0) &&
+        (!t1 || sliceWindField(forecastWindField, t1))
+      ) {
         return null;
       }
       return range;
     }
     return null;
-  }, [needWindField, mode, historyHours, gpxTrack, sessionSample, forecastWindField, forecastWindStatus]);
+  }, [needWindField, mode, historyHours, gpxTrack, forecastWindField, forecastWindStatus]);
 
   useEffect(() => {
     if (!neededWindRange) {
@@ -880,6 +888,15 @@ export default function App() {
         ? ("idle" as const)
         : forecastTempStatus;
 
+  const waveDurationSec = useMemo(() => {
+    if (mode === "sim") return undefined;
+    if (mode === "review") {
+      if (!sessionHours || !sessionSample) return undefined;
+      return windDurationSec(sessionHours, sessionSample.hourIndex);
+    }
+    return windDurationSec(chartHours, chartIndex);
+  }, [mode, chartHours, chartIndex, sessionHours, sessionSample]);
+
   const selectedHsM = useMemo(() => {
     if (mode === "review" && sessionSample) return sessionSample.hsM;
     if (!grids || !wind) return null;
@@ -890,42 +907,61 @@ export default function App() {
         forecastPoint.lat,
         wind.windSpeedMps,
         wind.windDirDeg,
+        waveDurationSec,
       );
     }
     if (grids.waveStats && windSlice && !windSlice.uniform) {
-      return approxMaxHsOverWind(grids.waveStats, windSlice, grids.meta);
+      return approxMaxHsOverWind(
+        grids.waveStats,
+        windSlice,
+        grids.meta,
+        waveDurationSec,
+      );
     }
     if (grids.waveStats) {
       return approxMaxHs(
         wind.windSpeedMps,
         wind.windDirDeg,
         grids.waveStats,
+        waveDurationSec,
       );
     }
-    const hs = computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
+    const hs = computeHsGrid(
+      grids,
+      wind.windSpeedMps,
+      wind.windDirDeg,
+      waveDurationSec,
+    );
     let m = 0;
     for (let i = 0; i < hs.length; i++) {
       const v = hs[i]!;
       if (Number.isFinite(v) && v > m) m = v;
     }
     return m;
-  }, [grids, wind, windSlice, forecastPoint, sessionSample, mode]);
+  }, [grids, wind, windSlice, forecastPoint, sessionSample, mode, waveDurationSec]);
 
   const spatialWaveHs = useMemo(() => {
     if (!grids?.waveStats || forecastPoint || mode === "sim") return undefined;
     const field =
       mode === "history" ? rangeWindField : forecastWindField;
     if (!field) return undefined;
-    return chartHours.map((h) => {
+    return chartHours.map((h, i) => {
       const slice = sliceWindField(field, h.time, HRDPS_HANDOFF_MS);
+      const durationSec = windDurationSec(chartHours, i);
       if (!slice || slice.uniform) {
         return approxMaxHs(
           h.windSpeedMps,
           h.windDirDeg,
           grids.waveStats!,
+          durationSec,
         );
       }
-      return approxMaxHsOverWind(grids.waveStats!, slice, grids.meta);
+      return approxMaxHsOverWind(
+        grids.waveStats!,
+        slice,
+        grids.meta,
+        durationSec,
+      );
     });
   }, [
     grids,
@@ -1028,9 +1064,19 @@ export default function App() {
             onSelectLake={setLakeId}
             depthContours={depthContours}
             wind={wind}
+            durationSec={waveDurationSec}
             units={units}
             simulating={mode === "sim"}
             historic={mode === "history"}
+            clockMode={mode}
+            selectedTime={
+              mode === "sim"
+                ? null
+                : mode === "review" && sessionSample
+                  ? sessionSample.time
+                  : (chartSelectedTime ?? null)
+            }
+            radarFollowLive={mode === "forecast" && chartIndex === chartNowIndex}
             forecastPoint={forecastPoint}
             gpxTrack={mode === "review" ? gpxTrack : null}
             gpxCursor={

@@ -394,6 +394,16 @@
   text-align: right;
 }
 
+.legend-radar {
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(28, 36, 32, 0.1);
+}
+
+.legend-radar .legend-title {
+  margin-bottom: 0.3rem;
+}
+
 .legend-pin-btn {
   display: block;
   width: 100%;
