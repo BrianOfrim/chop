@@ -53,7 +53,9 @@ export function CollapsiblePlot({ id, title, children }: Props) {
           <span className="plot-fold-chevron" aria-hidden>
             {collapsed ? "▸" : "▾"}
           </span>
-          {collapsed ? title : <span className="visually-hidden">{title}</span>}
+          <span className={collapsed ? undefined : "plot-fold-title-expanded"}>
+            {title}
+          </span>
         </span>
       </button>
       {!collapsed && (

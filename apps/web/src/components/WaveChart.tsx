@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import {
+  approxMaxHs,
   computeHsGrid,
-  sampleGridNearestWater,
+  hsAtLonLat,
   type LakeGrids,
 } from "@chop/wave-engine";
 import { hsColor, HS_COLOR_MAX_M } from "../lib/hsOverlay";
@@ -81,13 +82,25 @@ export function WaveChart({
     }
     if (!grids) return hours.map(() => 0);
     return hours.map((h) => {
-      const hs = computeHsGrid(grids, h.windSpeedMps, h.windDirDeg);
       if (sampleAt) {
         return (
-          sampleGridNearestWater(hs, grids.meta, sampleAt.lon, sampleAt.lat) ??
-          0
+          hsAtLonLat(
+            grids,
+            sampleAt.lon,
+            sampleAt.lat,
+            h.windSpeedMps,
+            h.windDirDeg,
+          ) ?? 0
         );
       }
+      if (grids.waveStats) {
+        return approxMaxHs(
+          h.windSpeedMps,
+          h.windDirDeg,
+          grids.waveStats,
+        );
+      }
+      const hs = computeHsGrid(grids, h.windSpeedMps, h.windDirDeg);
       return maxHsM(hs);
     });
   }, [grids, hours, sampleAt, hsMSeriesProp]);

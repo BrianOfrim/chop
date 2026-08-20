@@ -30,6 +30,8 @@ export type LakeGrids = {
    * Length = nDirs * ncols * nrows.
    */
   fetch: Float32Array;
+  /** Compact per-direction max fetch; used for lake-max Hs without a full scan. */
+  waveStats?: FetchDirStats | null;
 };
 
 /** Compact per-direction max-fetch summary for ranking lakes without full grids. */
@@ -75,20 +77,15 @@ export function nearestDirIndex(fromDeg: number, directionsDeg: number[]): numbe
   return best;
 }
 
-/**
- * Blend fetch from the two nearest direction bins by angular weight.
- */
-export function fetchAtDir(
-  fetch: Float32Array,
-  meta: GridMeta,
-  cellIndex: number,
-  fromDeg: number,
-): number {
+type FetchBlend = { i0: number; i1: number; w1: number };
+
+/** Two nearest fetch bins and the weight on the second, for one wind direction. */
+export function fetchDirBlend(meta: GridMeta, fromDeg: number): FetchBlend {
   const dirs = meta.directionsDeg;
   const n = dirs.length;
   const a = ((fromDeg % 360) + 360) % 360;
   let i0 = 0;
-  let i1 = 1;
+  let i1 = n > 1 ? 1 : 0;
   let d0 = Infinity;
   let d1 = Infinity;
   for (let i = 0; i < n; i++) {
@@ -104,11 +101,23 @@ export function fetchAtDir(
       i1 = i;
     }
   }
+  if (!(d0 + d1 > 0)) return { i0, i1, w1: 0 };
+  return { i0, i1, w1: d0 / (d0 + d1) };
+}
+
+/**
+ * Blend fetch from the two nearest direction bins by angular weight.
+ */
+export function fetchAtDir(
+  fetch: Float32Array,
+  meta: GridMeta,
+  cellIndex: number,
+  fromDeg: number,
+): number {
+  const { i0, i1, w1 } = fetchDirBlend(meta, fromDeg);
   const cells = meta.ncols * meta.nrows;
   const f0 = fetch[i0 * cells + cellIndex]!;
   const f1 = fetch[i1 * cells + cellIndex]!;
-  if (!(d0 + d1 > 0)) return f0;
-  const w1 = d0 / (d0 + d1);
   return f0 * (1 - w1) + f1 * w1;
 }
 
@@ -122,16 +131,254 @@ export function computeHsGrid(
   const n = meta.ncols * meta.nrows;
   const out = new Float32Array(n);
   const nodata = meta.nodata;
+  const { i0, i1, w1 } = fetchDirBlend(meta, fromDeg);
+  const base0 = i0 * n;
+  const base1 = i1 * n;
+  const w0 = 1 - w1;
   for (let i = 0; i < n; i++) {
     const d = depth[i]!;
     if (!Number.isFinite(d) || d === nodata || d <= 0) {
       out[i] = Number.NaN;
       continue;
     }
-    const f = fetchAtDir(fetch, meta, i, fromDeg);
+    const f = fetch[base0 + i]! * w0 + fetch[base1 + i]! * w1;
     out[i] = smbHsDepthLimited(uMps, f, d);
   }
   return out;
+}
+
+/** Coarse spatial wind (HRDPS-style). Matches apps/web WindFieldSlice layout. */
+export type SpatialWindGrid = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  ncols: number;
+  nrows: number;
+  speed: Float32Array;
+  dir: Float32Array;
+  /** True when every cell is the same vector (sim / uniform fallback). */
+  uniform?: boolean;
+};
+
+export type LonLatBounds = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+};
+
+function inSpatialWindExtent(
+  wind: SpatialWindGrid,
+  lon: number,
+  lat: number,
+): boolean {
+  return (
+    lon >= wind.west &&
+    lon <= wind.east &&
+    lat >= wind.south &&
+    lat <= wind.north
+  );
+}
+
+/** Nearest wind-grid cell, same indexing as sampleWindField(..., "edges"). */
+export function spatialWindCellIndex(
+  wind: SpatialWindGrid,
+  lon: number,
+  lat: number,
+): number | null {
+  if (!inSpatialWindExtent(wind, lon, lat)) return null;
+  const { ncols, nrows, west, south, east, north } = wind;
+  const i = Math.min(
+    ncols - 1,
+    Math.max(0, Math.floor(((lon - west) / (east - west)) * ncols)),
+  );
+  const j = Math.min(
+    nrows - 1,
+    Math.max(0, Math.floor(((north - lat) / (north - south)) * nrows)),
+  );
+  return j * ncols + i;
+}
+
+function fillHsForWindGroup(
+  grids: LakeGrids,
+  out: Float32Array,
+  idxs: number[],
+  uMps: number,
+  fromDeg: number,
+): void {
+  const { meta, depth, fetch } = grids;
+  const n = meta.ncols * meta.nrows;
+  const { i0, i1, w1 } = fetchDirBlend(meta, fromDeg);
+  const base0 = i0 * n;
+  const base1 = i1 * n;
+  const w0 = 1 - w1;
+  for (const idx of idxs) {
+    const d = depth[idx]!;
+    const f = fetch[base0 + idx]! * w0 + fetch[base1 + idx]! * w1;
+    out[idx] = smbHsDepthLimited(uMps, f, d);
+  }
+}
+
+/**
+ * Hs from local spatial wind + per-cell fetch.
+ * Groups lake cells by wind-grid index so fetch-direction blend runs once per
+ * ~11 km HRDPS cell. Uniform slices fall back to computeHsGrid.
+ */
+export function computeHsGridFromWind(
+  grids: LakeGrids,
+  wind: SpatialWindGrid,
+): Float32Array {
+  if (wind.uniform) {
+    const u = wind.speed[0];
+    const dir = wind.dir[0];
+    if (u != null && dir != null && Number.isFinite(u) && Number.isFinite(dir)) {
+      return computeHsGrid(grids, u, dir);
+    }
+  }
+  const { meta, depth } = grids;
+  const n = meta.ncols * meta.nrows;
+  const out = new Float32Array(n);
+  const nodata = meta.nodata;
+  const lon0 = meta.west;
+  const lat0 = meta.north;
+  const dlon = (meta.east - meta.west) / meta.ncols;
+  const dlat = (meta.north - meta.south) / meta.nrows;
+  const groups = new Map<number, { u: number; dir: number; idxs: number[] }>();
+
+  for (let j = 0; j < meta.nrows; j++) {
+    const lat = lat0 - (j + 0.5) * dlat;
+    for (let i = 0; i < meta.ncols; i++) {
+      const idx = j * meta.ncols + i;
+      const d = depth[idx]!;
+      if (!Number.isFinite(d) || d === nodata || d <= 0) {
+        out[idx] = Number.NaN;
+        continue;
+      }
+      const lon = lon0 + (i + 0.5) * dlon;
+      const widx = spatialWindCellIndex(wind, lon, lat);
+      if (widx == null) {
+        out[idx] = Number.NaN;
+        continue;
+      }
+      let g = groups.get(widx);
+      if (!g) {
+        const u = wind.speed[widx]!;
+        const dir = wind.dir[widx]!;
+        if (!Number.isFinite(u) || !Number.isFinite(dir)) {
+          out[idx] = Number.NaN;
+          continue;
+        }
+        g = { u, dir, idxs: [] };
+        groups.set(widx, g);
+      }
+      g.idxs.push(idx);
+    }
+  }
+
+  for (const g of groups.values()) {
+    fillHsForWindGroup(grids, out, g.idxs, g.u, g.dir);
+  }
+  return out;
+}
+
+/** Max approx Hs over wind-grid cells that overlap a lake bounding box. */
+export function approxMaxHsOverWind(
+  stats: FetchDirStats,
+  wind: SpatialWindGrid,
+  bbox: LonLatBounds,
+): number {
+  if (wind.uniform) {
+    const u = wind.speed[0];
+    const dir = wind.dir[0];
+    if (u == null || dir == null || !Number.isFinite(u) || !Number.isFinite(dir)) {
+      return 0;
+    }
+    return approxMaxHs(u, dir, stats);
+  }
+  const a = spatialWindCellIndex(wind, bbox.west, bbox.south);
+  const b = spatialWindCellIndex(wind, bbox.east, bbox.north);
+  const c = spatialWindCellIndex(wind, bbox.west, bbox.north);
+  const d = spatialWindCellIndex(wind, bbox.east, bbox.south);
+  const hits = [a, b, c, d].filter((x): x is number => x != null);
+  if (hits.length === 0) return 0;
+  const { ncols } = wind;
+  let i0 = ncols;
+  let i1 = 0;
+  let j0 = wind.nrows;
+  let j1 = 0;
+  for (const idx of hits) {
+    const i = idx % ncols;
+    const j = Math.floor(idx / ncols);
+    i0 = Math.min(i0, i);
+    i1 = Math.max(i1, i);
+    j0 = Math.min(j0, j);
+    j1 = Math.max(j1, j);
+  }
+  let max = 0;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const idx = j * ncols + i;
+      const u = wind.speed[idx]!;
+      const dir = wind.dir[idx]!;
+      if (!Number.isFinite(u) || !Number.isFinite(dir)) continue;
+      const hs = approxMaxHs(u, dir, stats);
+      if (hs > max) max = hs;
+    }
+  }
+  return max;
+}
+
+/** Water-cell index nearest to lon/lat, or null if off-grid / all land. */
+export function nearestWaterCellIndex(
+  values: Float32Array,
+  meta: GridMeta,
+  lon: number,
+  lat: number,
+): number | null {
+  const { ncols, nrows, west, south, east, north } = meta;
+  if (lon < west || lon > east || lat < south || lat > north) return null;
+  const i0 = Math.min(
+    ncols - 1,
+    Math.max(0, Math.floor(((lon - west) / (east - west)) * ncols)),
+  );
+  const j0 = Math.min(
+    nrows - 1,
+    Math.max(0, Math.floor(((north - lat) / (north - south)) * nrows)),
+  );
+  const at = (i: number, j: number) => j * ncols + i;
+  const v0 = values[at(i0, j0)]!;
+  if (Number.isFinite(v0) && v0 >= 0) return at(i0, j0);
+  for (let r = 1; r <= 4; r++) {
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        const i = i0 + di;
+        const j = j0 + dj;
+        if (i < 0 || j < 0 || i >= ncols || j >= nrows) continue;
+        const idx = at(i, j);
+        const val = values[idx]!;
+        if (Number.isFinite(val) && val >= 0) return idx;
+      }
+    }
+  }
+  return null;
+}
+
+/** Hs at one water cell; null if the point is off-water. */
+export function hsAtLonLat(
+  grids: LakeGrids,
+  lon: number,
+  lat: number,
+  uMps: number,
+  fromDeg: number,
+): number | null {
+  const i = nearestWaterCellIndex(grids.depth, grids.meta, lon, lat);
+  if (i == null) return null;
+  const d = grids.depth[i]!;
+  if (!(d > 0)) return null;
+  const f = fetchAtDir(grids.fetch, grids.meta, i, fromDeg);
+  return smbHsDepthLimited(uMps, f, d);
 }
 
 /** Sample grid value at lon/lat (bilinear for depth/Hs; returns null off-grid / land). */

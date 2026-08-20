@@ -2,6 +2,17 @@ import type { GridMeta } from "@chop/wave-engine";
 
 /** Display canvas is this many times the native Hs grid (sharper shore clip). */
 export const HS_CANVAS_SCALE = 2;
+/** Cap so Lesser Slave–scale lakes do not allocate a 4k×2k mask on select. */
+export const HS_CANVAS_MAX_EDGE = 1536;
+
+export function hsCanvasScale(
+  meta: GridMeta,
+  scale: number = HS_CANVAS_SCALE,
+): number {
+  const edge = Math.max(meta.ncols, meta.nrows) * scale;
+  if (edge <= HS_CANVAS_MAX_EDGE) return scale;
+  return (scale * HS_CANVAS_MAX_EDGE) / edge;
+}
 
 function lonLatToPx(
   meta: GridMeta,
@@ -39,9 +50,10 @@ export function buildShoreMaskCanvas(
   shoreline: GeoJSON.FeatureCollection,
   scale: number = HS_CANVAS_SCALE,
 ): HTMLCanvasElement {
+  const s = hsCanvasScale(meta, scale);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(meta.ncols * scale));
-  canvas.height = Math.max(1, Math.round(meta.nrows * scale));
+  canvas.width = Math.max(1, Math.round(meta.ncols * s));
+  canvas.height = Math.max(1, Math.round(meta.nrows * s));
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#ffffff";
@@ -50,10 +62,10 @@ export function buildShoreMaskCanvas(
     const g = f.geometry;
     if (!g) continue;
     if (g.type === "Polygon") {
-      for (const ring of g.coordinates) addRing(ctx, meta, ring, scale);
+      for (const ring of g.coordinates) addRing(ctx, meta, ring, s);
     } else if (g.type === "MultiPolygon") {
       for (const poly of g.coordinates) {
-        for (const ring of poly) addRing(ctx, meta, ring, scale);
+        for (const ring of poly) addRing(ctx, meta, ring, s);
       }
     }
   }
@@ -62,9 +74,10 @@ export function buildShoreMaskCanvas(
 }
 
 export function hsCanvasSize(meta: GridMeta, scale: number = HS_CANVAS_SCALE) {
+  const s = hsCanvasScale(meta, scale);
   return {
-    width: Math.max(1, Math.round(meta.ncols * scale)),
-    height: Math.max(1, Math.round(meta.nrows * scale)),
+    width: Math.max(1, Math.round(meta.ncols * s)),
+    height: Math.max(1, Math.round(meta.nrows * s)),
   };
 }
 

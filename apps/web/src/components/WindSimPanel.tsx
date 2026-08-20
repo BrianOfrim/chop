@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { cardinalFromDeg } from "../lib/wind";
 import {
   formatWindSpeed,
@@ -9,6 +9,7 @@ import {
 import { WIND_COLOR_MAX_MPS } from "../lib/windScale";
 import type { WindMode } from "../lib/historyRange";
 import { HISTORY_DAYS, HISTORY_VIEW_DAYS } from "../lib/historyRange";
+import { MOBILE_MQ } from "../lib/mobile";
 
 type Props = {
   mode: WindMode;
@@ -40,6 +41,13 @@ function eventFromDeg(el: SVGSVGElement, clientX: number, clientY: number): numb
   return ((Math.round(deg) % 360) + 360) % 360;
 }
 
+const MODE_LABELS: Record<WindMode, string> = {
+  forecast: "Forecast",
+  history: "History",
+  review: "Review",
+  sim: "Sim",
+};
+
 export function WindSimPanel({
   mode,
   onModeChange,
@@ -62,13 +70,36 @@ export function WindSimPanel({
   onReviewFollowChange,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  const [expanded, setExpanded] = useState(false);
 
   const speedMax = Math.round(mpsToWind(WIND_COLOR_MAX_MPS, windUnit));
   const speedStep = windUnit === "mps" ? 0.5 : 1;
   const speedVal = mpsToWind(speedMps, windUnit);
   const speedDigits = windUnit === "mps" ? 1 : 0;
   const toDeg = (dirDeg + 180) % 360;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const mq = window.matchMedia(MOBILE_MQ);
+    if (!mq.matches) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpanded(false);
+    };
+    const onPointer = (e: PointerEvent) => {
+      if (e.target instanceof Element && panelRef.current?.contains(e.target)) {
+        return;
+      }
+      setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointer);
+    };
+  }, [expanded]);
 
   const setFromPointer = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
@@ -80,7 +111,23 @@ export function WindSimPanel({
   );
 
   return (
-    <div className={`sim-panel${mode !== "forecast" ? " is-on" : ""}`}>
+    <div
+      ref={panelRef}
+      className={`sim-panel${mode !== "forecast" ? " is-on" : ""}${expanded ? " is-expanded" : ""}`}
+    >
+      <button
+        type="button"
+        className="sim-panel-toggle"
+        aria-expanded={expanded}
+        aria-controls="sim-panel-sheet"
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <span>{MODE_LABELS[mode]}</span>
+        <span className="plot-fold-chevron" aria-hidden>
+          {expanded ? "▾" : "▸"}
+        </span>
+      </button>
+      <div id="sim-panel-sheet" className="sim-panel-sheet">
       <div className="sim-tabs" role="tablist" aria-label="Wind source">
         {(
           [
@@ -163,7 +210,7 @@ export function WindSimPanel({
           )}
           {reviewStatus === "ready" && (
             <p className="sim-lead">
-              {reviewLabel || "Session"} · scrub the track to see Hs at you
+              {reviewLabel || "Session"} · scrub the track to see wave height at your location
             </p>
           )}
           <button
@@ -265,6 +312,7 @@ export function WindSimPanel({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

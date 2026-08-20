@@ -10,10 +10,16 @@
   align-items: center;
   gap: 1rem;
   padding: 0.65rem 1rem;
+  padding-left: calc(1rem + var(--safe-left));
+  padding-right: calc(1rem + var(--safe-right));
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(8px);
   z-index: 2;
+}
+
+.topbar {
+  padding-top: calc(0.65rem + var(--safe-top));
 }
 
 .topbar {
@@ -26,11 +32,12 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0.45rem;
+  padding-bottom: calc(0.45rem + var(--safe-bottom));
 }
 
 .bottombar.is-collapsed {
   padding-top: 0.4rem;
-  padding-bottom: 0.4rem;
+  padding-bottom: calc(0.4rem + var(--safe-bottom));
 }
 
 .bottombar-fold {
@@ -63,12 +70,6 @@
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
-}
-
-.brand-sub {
-  font-size: 0.72rem;
-  color: var(--muted);
-  text-transform: lowercase;
 }
 
 .lake-picker,
@@ -135,6 +136,18 @@
   align-items: center;
   gap: 0.65rem;
   margin-left: auto;
+  position: relative;
+}
+
+.units-toggle {
+  display: none;
+}
+
+.unit-prefs-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
 }
 
 .unit-picker {
@@ -176,6 +189,8 @@
   border-radius: 8px;
   padding: 0.45rem 0.8rem;
   font-size: 0.9rem;
+  max-width: calc(100vw - 2rem);
+  box-sizing: border-box;
 }
 
 .banner.error {
@@ -188,7 +203,7 @@
   left: 0.85rem;
   bottom: 0.85rem;
   z-index: 2;
-  width: 17.5rem;
+  width: min(17.5rem, calc(100vw - 1.5rem));
   padding: 0.65rem 0.75rem;
   background: rgba(248, 246, 240, 0.52);
   border: 1px solid rgba(28, 36, 32, 0.1);
@@ -260,15 +275,29 @@
 }
 
 .legend-info:hover,
-.legend-info:focus-visible {
+.legend-info:focus-visible,
+.legend-info.is-open {
   color: var(--ink);
   border-color: var(--accent);
 }
 
 .legend-info:hover .legend-info-tip,
-.legend-info:focus-visible .legend-info-tip {
+.legend-info:focus-visible .legend-info-tip,
+.legend-info.is-open .legend-info-tip {
   display: grid;
   gap: 0;
+}
+
+@media (hover: none) {
+  .legend-info:hover .legend-info-tip {
+    display: none;
+  }
+
+  .legend-info.is-open .legend-info-tip,
+  .legend-info:focus-visible .legend-info-tip {
+    display: grid;
+    gap: 0;
+  }
 }
 
 .legend-bar-hit {
@@ -434,6 +463,11 @@
 .readout .muted {
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.readout-primary,
+.readout-more {
+  display: contents;
 }
 
 .lake-info {
@@ -721,6 +755,18 @@
 .plot-fold-chevron {
   width: 0.7rem;
   flex: none;
+}
+
+.plot-fold-title-expanded {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .forecast-plot {
@@ -1082,6 +1128,14 @@
   font-size: 10px;
 }
 
+.layers-btn {
+  display: none;
+}
+
+.map-layers {
+  display: contents;
+}
+
 .basemap-toggle {
   position: absolute;
   top: 0.75rem;
@@ -1204,6 +1258,10 @@
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(20, 40, 30, 0.08);
   overflow: auto;
+}
+
+.sim-panel-toggle {
+  display: none;
 }
 
 .sim-tabs {
@@ -2122,6 +2180,7 @@
   height: auto;
 }
 
+/* Shared by Compare charts and the map forecast scrubber. */
 .compare-selected-time-row {
   align-items: center;
 }
@@ -2139,4 +2198,392 @@
   font-size: 0.65rem;
   padding: 0.08rem 0.35rem;
 }
+
+@media (max-width: 720px) {
+  .topbar {
+    gap: 0.45rem 0.55rem;
+    padding: calc(0.45rem + var(--safe-top)) calc(0.65rem + var(--safe-right))
+      0.45rem calc(0.65rem + var(--safe-left));
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .brand-mark {
+    font-size: 1.2rem;
+  }
+
+  .view-nav a {
+    padding: 0.55rem 0.7rem;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .lake-picker {
+    flex: 1 1 8rem;
+    min-width: 0;
+    font-size: 0.8rem;
+  }
+
+  .lake-picker select {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .unit-prefs {
+    margin-left: 0;
+    flex: none;
+  }
+
+  .units-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0.35rem 0.65rem;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 8px;
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .units-toggle[aria-expanded="true"] {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .unit-prefs-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 8;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    min-width: 11rem;
+    padding: 0.65rem 0.75rem;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(20, 40, 30, 0.12);
+  }
+
+  .unit-prefs-menu.is-open {
+    display: flex;
+  }
+
+  .unit-picker {
+    justify-content: space-between;
+  }
+
+  .unit-picker select {
+    min-height: 44px;
+  }
+
+  .map-layers-wrap {
+    position: absolute;
+    top: 0.65rem;
+    right: 3.35rem;
+    z-index: 3;
+  }
+
+  .layers-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 8px;
+    color: var(--ink);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(20, 40, 30, 0.08);
+  }
+
+  .layers-btn[aria-expanded="true"] {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .map-layers {
+    display: none;
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    z-index: 4;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 12.5rem;
+    padding: 0.45rem;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(20, 40, 30, 0.12);
+  }
+
+  .map-layers.is-open {
+    display: flex;
+  }
+
+  .map-layers .basemap-toggle {
+    position: static;
+    top: auto;
+    right: auto;
+    width: 100%;
+  }
+
+  .map-layers .basemap-toggle button {
+    flex: 1;
+    min-height: 44px;
+    padding: 0.45rem 0.4rem;
+  }
+
+  .maplibregl-ctrl-top-right {
+    top: 0.55rem;
+    right: 0.45rem;
+  }
+
+  .maplibregl-ctrl-group button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .legend {
+    left: 0.5rem;
+    bottom: 0.5rem;
+    padding: 0.5rem 0.6rem;
+  }
+
+  .legend-info {
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+
+  .legend-pin-btn {
+    min-height: 44px;
+  }
+
+  .sim-panel {
+    top: 0.65rem;
+    left: 0.5rem;
+    width: auto;
+    max-width: calc(100% - 7.5rem);
+    max-height: none;
+    overflow: visible;
+  }
+
+  .sim-panel-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 44px;
+    padding: 0.35rem 0.7rem;
+    border: none;
+    background: transparent;
+    color: var(--ink);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .sim-panel-sheet {
+    display: none;
+  }
+
+  .sim-panel.is-expanded {
+    right: 0.5rem;
+    max-width: none;
+    width: auto;
+    max-height: min(70%, calc(100% - 1.3rem));
+    overflow: auto;
+  }
+
+  .sim-panel.is-expanded .sim-panel-sheet {
+    display: block;
+  }
+
+  .sim-tabs button {
+    min-height: 44px;
+    font-size: 0.72rem;
+  }
+
+  .bottombar {
+    padding: 0.4rem calc(0.65rem + var(--safe-right))
+      calc(0.4rem + var(--safe-bottom)) calc(0.65rem + var(--safe-left));
+  }
+
+  .bottombar-fold {
+    min-height: 44px;
+    padding-right: 0.35rem;
+    font-size: 0.78rem;
+  }
+
+  .readout-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+  }
+
+  .readout {
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.82rem;
+  }
+
+  .readout-primary,
+  .readout-more {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.45rem 0.65rem;
+  }
+
+  .range-toggle {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .range-toggle button {
+    flex: 1;
+    min-height: 44px;
+    padding: 0.4rem 0.35rem;
+  }
+
+  .forecast-panel {
+    max-height: 42vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .plot-fold-toggle,
+  .forecast-plot {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+  }
+
+  .forecast-plot-rail {
+    grid-template-columns: 10px minmax(0, 1fr);
+  }
+
+  .forecast-plot-title {
+    display: none;
+  }
+
+  .plot-fold-title-expanded {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: unset;
+    clip-path: none;
+    white-space: nowrap;
+  }
+
+  .color-scale-legend.vertical .color-scale-labels {
+    font-size: 0.62rem;
+  }
+
+  .wind-chart-svg,
+  .forecast-time-axis,
+  .weather-strip-svg {
+    touch-action: pan-y;
+  }
+
+  .scrubber input[type="range"] {
+    --thumb: 22px;
+    height: 1.75rem;
+  }
+
+  .scrubber input[type="range"]::-webkit-slider-thumb {
+    margin-top: -9.5px;
+  }
+
+  .now-btn {
+    min-height: 36px;
+    padding: 0.25rem 0.55rem;
+  }
+
+  .lake-info-panel {
+    max-height: min(58vh, calc(100dvh - 8rem));
+    overflow-y: auto;
+  }
+
+  .lake-name-btn {
+    min-height: 44px;
+  }
+
+  .compare-main {
+    padding: 0.45rem 0.65rem 0.6rem;
+  }
+
+  .compare-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .compare-toolbar-controls {
+    width: 100%;
+  }
+
+  .compare-toolbar-controls .range-toggle {
+    width: 100%;
+  }
+
+  .compare-table {
+    width: 100%;
+    min-width: 52rem;
+  }
+
+  .compare-table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .compare-table thead th:nth-child(1),
+  .compare-table tbody td:nth-child(1) {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #f8f6f0;
+  }
+
+  .compare-table thead th:nth-child(2),
+  .compare-table tbody td:nth-child(2) {
+    position: sticky;
+    left: 2.15rem;
+    z-index: 2;
+    background: #f8f6f0;
+    box-shadow: 1px 0 0 var(--line);
+  }
+
+  .compare-table thead th:nth-child(1),
+  .compare-table thead th:nth-child(2) {
+    z-index: 3;
+  }
+
+  .compare-table tbody tr.is-selected td:nth-child(1),
+  .compare-table tbody tr.is-selected td:nth-child(2) {
+    background: #e7eeec;
+  }
+
+  .compare-col-check {
+    width: 2.15rem;
+  }
+
+  .compare-check-col {
+    width: 2.15rem;
+  }
+}
+
 

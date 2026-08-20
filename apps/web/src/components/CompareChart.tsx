@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { formatWind, nearestHourIndex, type WindHour } from "../lib/wind";
-import { sliderInsetStyle } from "../lib/forecastChart";
+import { formatSelectedWhen, sliderInsetStyle } from "../lib/forecastChart";
 import {
   celsiusToTemp,
   formatTemp,
@@ -34,15 +34,6 @@ import {
 import { WIND_COLOR_MAX_MPS } from "../lib/windScale";
 import { HS_COLOR_MAX_M } from "../lib/hsOverlay";
 import { TEMP_COLOR_MAX_C, TEMP_COLOR_MIN_C } from "../lib/tempScale";
-
-function formatSelectedWhen(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-  });
-}
 
 function formatHs(m: number | null | undefined, unit: WaveHeightUnit): string {
   if (m == null || !Number.isFinite(m)) return "—";
@@ -206,7 +197,7 @@ export function CompareCharts({
                         windUnit,
                       )}
                     </span>
-                    <span>Hs {formatHs(hsM, waveUnit)}</span>
+                    <span>Waves {formatHs(hsM, waveUnit)}</span>
                     {hour.tempC != null && Number.isFinite(hour.tempC) && (
                       <span>{formatTemp(hour.tempC, tempUnit)}</span>
                     )}

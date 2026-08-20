@@ -189,7 +189,7 @@ export async function loadLakeGrids(basePath: string): Promise<{
     throw new Error(`Failed to load lake assets from ${basePath}`);
   }
 
-  const meta = (await metaRes.json()) as GridMeta & { spotId?: string };
+  const meta = (await metaRes.json()) as GridJson;
   const depthBuf = await depthRes.arrayBuffer();
   const fetchBuf = await fetchFileRes.arrayBuffer();
   const spot = (await spotRes.json()) as SpotProfile;
@@ -211,7 +211,7 @@ export async function loadLakeGrids(basePath: string): Promise<{
   }
 
   return {
-    grids: { meta, depth, fetch: fetchGrid },
+    grids: { meta, depth, fetch: fetchGrid, waveStats: waveStatsFromGrid(meta) },
     spot,
     shoreline,
     depthContours,

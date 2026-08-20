@@ -73,7 +73,7 @@ After reload:
 
 ### 2. Overlay rules (click + snapshot)
 
-- **Waves** then **Depth**: Blend/Edges gone. Legend is `Wave height Hs` then `Depth`.
+- **Waves** then **Depth**: Blend/Edges gone. Legend is `Wave height` then `Depth`.
 - **Temp**: Blend/Edges back. Legend is `Temperature`.
 - **Wind** again: Particles on. `canvas.wind-particles` has class `is-on` if Particles is selected.
 - **Arrows** (Wind overlay, heatmap on): directional shafts/chevrons visible **above** the color field across the province (not empty). `canvas.wind-particles` is `is-on`. Switch back to **Particles** afterwards.

@@ -1,6 +1,5 @@
 import {
-  computeHsGrid,
-  sampleGridNearestWater,
+  hsAtLonLat,
   type LakeGrids,
 } from "@chop/wave-engine";
 import { timedTrackPoints, type GpxPoint, type GpxTrack } from "./gpx";
@@ -36,22 +35,10 @@ export function buildSessionSeries(
 ): SessionSample[] {
   if (hours.length === 0) return [];
   const points = timedTrackPoints(track, maxPoints);
-  const hsCache = new Map<number, Float32Array>();
-
-  function hsForHour(i: number): Float32Array {
-    let hs = hsCache.get(i);
-    if (!hs) {
-      const h = hours[i]!;
-      hs = computeHsGrid(grids, h.windSpeedMps, h.windDirDeg);
-      hsCache.set(i, hs);
-    }
-    return hs;
-  }
 
   return points.map((p, i) => {
     const hourIndex = nearestHourIndex(hours, p.timeMs!);
     const wind = hours[hourIndex]!;
-    const hs = hsForHour(hourIndex);
     const recorded =
       p.speedMps != null && Number.isFinite(p.speedMps) ? p.speedMps : null;
     const speedMps = recorded ?? speedFromNeighbors(points, i);
@@ -64,7 +51,7 @@ export function buildSessionSeries(
       timeMs: p.timeMs!,
       lon: p.lon,
       lat: p.lat,
-      hsM: sampleGridNearestWater(hs, grids.meta, p.lon, p.lat),
+      hsM: hsAtLonLat(grids, p.lon, p.lat, wind.windSpeedMps, wind.windDirDeg),
       speedMps,
       headingDeg,
       pointDeg: pointAngleFromPerp(headingDeg, wind.windDirDeg),

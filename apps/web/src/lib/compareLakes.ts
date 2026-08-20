@@ -77,6 +77,14 @@ export function saveSelectedCompareLakes(ids: string[]): void {
   }
 }
 
+/** Put `lakeId` first so Compare and the map share the same primary lake. */
+export function promoteSelectedLake(selected: string[], lakeId: string): string[] {
+  if (!lakeId) return selected;
+  if (selected[0] === lakeId) return selected;
+  const rest = selected.filter((id) => id !== lakeId);
+  return [lakeId, ...rest].slice(0, MAX_COMPARE_LAKES);
+}
+
 export async function loadEnabledLakes(): Promise<LakeIndexEntry[]> {
   const list = await loadLakeIndex();
   return list.filter((l) => l.enabled);

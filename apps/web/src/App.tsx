@@ -52,11 +52,12 @@ import {
   type UnitPrefs,
 } from "./lib/units";
 import {
+  approxMaxHs,
+  approxMaxHsOverWind,
   computeHsGrid,
-  sampleGridNearestWater,
-  type LakeGrids,
+  hsAtLonLat,
 } from "@chop/wave-engine";
-import { sliderInsetStyle } from "./lib/forecastChart";
+import { formatSelectedWhen, sliderInsetStyle } from "./lib/forecastChart";
 import { WindSimPanel } from "./components/WindSimPanel";
 import { SessionWaveChart } from "./components/SessionWaveChart";
 import { SessionWindChart } from "./components/SessionWindChart";
@@ -91,6 +92,7 @@ import {
   type WindMode,
 } from "./lib/historyRange";
 import { loadLakeId, saveLakeId } from "./lib/selectedLake";
+import { isMobileViewport } from "./lib/mobile";
 import {
   fetchAdvisories,
   lakeAdvisory,
@@ -153,10 +155,13 @@ function saveReviewFollow(on: boolean): void {
 
 function loadBottomCollapsed(): boolean {
   try {
-    return localStorage.getItem(BOTTOM_PANEL_KEY) === "1";
+    const raw = localStorage.getItem(BOTTOM_PANEL_KEY);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
   } catch {
-    return false;
+    /* ignore */
   }
+  return isMobileViewport();
 }
 
 function saveBottomCollapsed(on: boolean): void {
@@ -519,6 +524,8 @@ export default function App() {
   const chartIndex = mode === "history" ? historyIndex : hourIndex;
   const setChartIndex =
     mode === "history" ? setHistoryIndex : setHourIndex;
+  const chartNowIndex = nearestHourIndex(chartHours);
+  const chartSelectedTime = chartHours[chartIndex]?.time;
 
   const forecastWind = forecastHours[hourIndex] ?? null;
   const historyWind = historyHours[historyIndex] ?? null;
@@ -876,22 +883,58 @@ export default function App() {
   const selectedHsM = useMemo(() => {
     if (mode === "review" && sessionSample) return sessionSample.hsM;
     if (!grids || !wind) return null;
-    const hs = computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
     if (forecastPoint) {
-      return sampleGridNearestWater(
-        hs,
-        grids.meta,
+      return hsAtLonLat(
+        grids,
         forecastPoint.lon,
         forecastPoint.lat,
+        wind.windSpeedMps,
+        wind.windDirDeg,
       );
     }
+    if (grids.waveStats && windSlice && !windSlice.uniform) {
+      return approxMaxHsOverWind(grids.waveStats, windSlice, grids.meta);
+    }
+    if (grids.waveStats) {
+      return approxMaxHs(
+        wind.windSpeedMps,
+        wind.windDirDeg,
+        grids.waveStats,
+      );
+    }
+    const hs = computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
     let m = 0;
     for (let i = 0; i < hs.length; i++) {
       const v = hs[i]!;
       if (Number.isFinite(v) && v > m) m = v;
     }
     return m;
-  }, [grids, wind, forecastPoint, sessionSample, mode]);
+  }, [grids, wind, windSlice, forecastPoint, sessionSample, mode]);
+
+  const spatialWaveHs = useMemo(() => {
+    if (!grids?.waveStats || forecastPoint || mode === "sim") return undefined;
+    const field =
+      mode === "history" ? rangeWindField : forecastWindField;
+    if (!field) return undefined;
+    return chartHours.map((h) => {
+      const slice = sliceWindField(field, h.time, HRDPS_HANDOFF_MS);
+      if (!slice || slice.uniform) {
+        return approxMaxHs(
+          h.windSpeedMps,
+          h.windDirDeg,
+          grids.waveStats!,
+        );
+      }
+      return approxMaxHsOverWind(grids.waveStats!, slice, grids.meta);
+    });
+  }, [
+    grids,
+    forecastPoint,
+    mode,
+    rangeWindField,
+    forecastWindField,
+    chartHours,
+  ]);
 
   const timeLabel = useMemo(() => {
     if (mode === "review" && sessionSample) {
@@ -947,14 +990,6 @@ export default function App() {
     ];
   }, [mode, sessionSample]);
 
-  const advisoryLakeIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (!advisories || advisories.status !== "ok") return ids;
-    for (const [id, row] of Object.entries(advisories.lakes)) {
-      if (row.advisory) ids.add(id);
-    }
-    return ids;
-  }, [advisories]);
   const selectedAdvisory = lakeAdvisory(advisories, lakeId);
   const closeLakeInfo = useCallback(() => setLakeInfoKind(null), []);
   const selectedLake = lakes.find((l) => l.id === lakeId);
@@ -968,7 +1003,6 @@ export default function App() {
         lakeId={lakeId}
         lakes={lakes}
         onLakeId={setLakeId}
-        advisoryLakeIds={advisoryLakeIds}
       />
 
       <main className="main">
@@ -1121,6 +1155,7 @@ export default function App() {
             Charts
           </button>
           <div className="readout">
+            <div className="readout-primary">
             <div className="lake-info">
               <button
                 type="button"
@@ -1133,7 +1168,7 @@ export default function App() {
                   setLakeInfoKind((kind) => (kind === "lake" ? null : "lake"))
                 }
               >
-                {spot?.identity.name ?? "—"}
+                {selectedLake?.name ?? spot?.identity.name ?? "—"}
               </button>
               {selectedAdvisory?.advisory && (
                 <button
@@ -1174,7 +1209,7 @@ export default function App() {
                 open={lakeInfoKind != null}
                 kind={lakeInfoKind ?? "lake"}
                 onClose={closeLakeInfo}
-                lakeName={spot?.identity.name ?? "—"}
+                lakeName={selectedLake?.name ?? spot?.identity.name ?? "—"}
                 region={selectedLake?.region}
                 summary={spot?.identity.summary}
                 feed={advisories}
@@ -1203,6 +1238,25 @@ export default function App() {
                 )}
               </span>
             )}
+            {selectedHsM != null && (
+              <span>
+                {mode === "review" && sessionSample
+                  ? "At you"
+                  : forecastPoint
+                    ? "Wave height"
+                    : "Lake max"}{" "}
+                {formatWaveHeight(selectedHsM, units.wave)}
+              </span>
+            )}
+            {reviewSpeedLabel && <span>Speed {reviewSpeedLabel}</span>}
+            {reviewPointLabel && <span>{reviewPointLabel}</span>}
+            {mode === "review" && gpxTrack && (
+              <span className="muted" title={gpxTrack.filename}>
+                Track {gpxTrack.label}
+              </span>
+            )}
+            </div>
+            <div className="readout-more">
             {wind?.tempC != null && Number.isFinite(wind.tempC) && (
               <span>{formatTemp(wind.tempC, units.temp)}</span>
             )}
@@ -1215,23 +1269,6 @@ export default function App() {
                 }
               >
                 {formatWeatherHour(wxHour.weatherCode, wxHour.precipMm)}
-              </span>
-            )}
-            {selectedHsM != null && (
-              <span>
-                {mode === "review" && sessionSample
-                  ? "Hs at you"
-                  : forecastPoint
-                    ? "Hs"
-                    : "max Hs"}{" "}
-                {formatWaveHeight(selectedHsM, units.wave)}
-              </span>
-            )}
-            {reviewSpeedLabel && <span>Speed {reviewSpeedLabel}</span>}
-            {reviewPointLabel && <span>{reviewPointLabel}</span>}
-            {mode === "review" && gpxTrack && (
-              <span className="muted" title={gpxTrack.filename}>
-                Track {gpxTrack.label}
               </span>
             )}
             {mode === "forecast" && waterTempStatus === "loading" && (
@@ -1252,6 +1289,7 @@ export default function App() {
                 Water temp unavailable
               </span>
             )}
+            </div>
           </div>
           <div
             className="range-toggle"
@@ -1346,7 +1384,7 @@ export default function App() {
                   windUnit={units.wind}
                 />
               </CollapsiblePlot>
-              {grids && (
+              {grids && spot?.spotId === lakeId && (
                 <CollapsiblePlot id="forecast-waves" title="Waves">
                   <WaveChart
                     hours={chartHours}
@@ -1355,6 +1393,7 @@ export default function App() {
                     grids={grids}
                     waveUnit={units.wave}
                     sampleAt={forecastPoint}
+                    hsMSeries={spatialWaveHs}
                   />
                 </CollapsiblePlot>
               )}
@@ -1383,6 +1422,17 @@ export default function App() {
                   onSelectHour={setChartIndex}
                 />
               </div>
+              <div className="forecast-plot compare-selected-time-row">
+                <div className="forecast-plot-rail" aria-hidden />
+                <p className="compare-selected-time" aria-live="polite">
+                  {chartSelectedTime
+                    ? formatSelectedWhen(chartSelectedTime)
+                    : ""}
+                  {mode !== "history" && chartIndex === chartNowIndex
+                    ? " · Now"
+                    : ""}
+                </p>
+              </div>
               <div className="forecast-plot scrubber-row">
                 <div className="forecast-plot-rail scrubber-rail">
                   {mode === "history" ? (
@@ -1405,10 +1455,8 @@ export default function App() {
                     <button
                       type="button"
                       className="now-btn"
-                      disabled={chartIndex === nearestHourIndex(chartHours)}
-                      onClick={() =>
-                        setChartIndex(nearestHourIndex(chartHours))
-                      }
+                      disabled={chartIndex === chartNowIndex}
+                      onClick={() => setChartIndex(chartNowIndex)}
                     >
                       Now
                     </button>
@@ -1424,6 +1472,16 @@ export default function App() {
                     max={Math.max(0, chartHours.length - 1)}
                     value={chartIndex}
                     onChange={(e) => setChartIndex(Number(e.target.value))}
+                    aria-label="Forecast hour"
+                    aria-valuetext={
+                      chartSelectedTime
+                        ? `${formatSelectedWhen(chartSelectedTime)}${
+                            mode !== "history" && chartIndex === chartNowIndex
+                              ? ", now"
+                              : ""
+                          }`
+                        : undefined
+                    }
                   />
                 </div>
               </div>

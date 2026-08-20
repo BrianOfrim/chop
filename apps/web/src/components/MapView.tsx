@@ -10,6 +10,7 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   computeHsGrid,
+  computeHsGridFromWind,
   fetchAtDir,
   sampleGrid,
   type LakeGrids,
@@ -285,20 +286,37 @@ function saveHeatmapStyle(id: HeatmapStyle): void {
 }
 
 function lakeLineWidth(selectedId: string) {
+  const selected: ["==", ["get", "lakeId"], string] = [
+    "==",
+    ["get", "lakeId"],
+    selectedId,
+  ];
+  // One zoom interpolate only — MapLibre rejects case(interpolate, interpolate).
   return [
-    "case",
-    ["==", ["get", "lakeId"], selectedId],
-    ["interpolate", ["linear"], ["zoom"], 4, 2.4, 11, 3.2],
-    ["interpolate", ["linear"], ["zoom"], 4, 1.7, 11, 2.2],
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    4,
+    ["case", selected, 2.4, 1.7],
+    11,
+    ["case", selected, 3.2, 2.2],
   ] as const;
 }
 
 function lakeLineCaseWidth(selectedId: string) {
+  const selected: ["==", ["get", "lakeId"], string] = [
+    "==",
+    ["get", "lakeId"],
+    selectedId,
+  ];
   return [
-    "case",
-    ["==", ["get", "lakeId"], selectedId],
-    ["interpolate", ["linear"], ["zoom"], 4, 4.2, 11, 5.4],
-    ["interpolate", ["linear"], ["zoom"], 4, 3.2, 11, 3.8],
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    4,
+    ["case", selected, 4.2, 3.2],
+    11,
+    ["case", selected, 5.4, 3.8],
   ] as const;
 }
 
@@ -907,6 +925,73 @@ function spatialWindSlice(
   return slice;
 }
 
+function hoverFromMapEvent(
+  e: MapMouseEvent,
+  grids: LakeGrids,
+  overlay: OverlayId,
+  simulating: boolean,
+  windSlice: WindFieldSlice | null | undefined,
+  heatmapStyle: HeatmapStyle,
+  tempSlice: TempFieldSlice | null,
+  hs: Float32Array | null,
+  wind: WindHour | null,
+): HoverInfo | null {
+  const { lng, lat } = e.lngLat;
+  const depthM = sampleGrid(grids.depth, grids.meta, lng, lat);
+  const onWater = depthM != null && depthM > 0;
+  const slice = spatialWindSlice(windSlice, simulating);
+  const field = slice
+    ? sampleWindField(slice, lng, lat, heatmapStyle)
+    : null;
+  const windMode = overlay === "wind";
+  const tempMode = overlay === "temp";
+  const airC = tempSlice
+    ? sampleTempField(tempSlice, lng, lat, heatmapStyle)
+    : null;
+  if (windMode) {
+    const overField = slice ? inWindFieldExtent(slice, lng, lat) : false;
+    if (!overField && !onWater && !field) return null;
+  } else if (tempMode) {
+    const overField = tempSlice
+      ? lng >= tempSlice.west &&
+        lng <= tempSlice.east &&
+        lat >= tempSlice.south &&
+        lat <= tempSlice.north
+      : false;
+    if (!overField && !onWater && airC == null) return null;
+  } else if (!onWater) {
+    return null;
+  }
+  let fetchM: number | null = null;
+  const hsM =
+    onWater && hs ? sampleGrid(hs, grids.meta, lng, lat) : null;
+  if (onWater && wind) {
+    const { ncols, nrows, west, south, east, north } = grids.meta;
+    const fx = ((lng - west) / (east - west)) * ncols;
+    const fy = ((north - lat) / (north - south)) * nrows;
+    const i = Math.min(ncols - 1, Math.max(0, Math.floor(fx)));
+    const j = Math.min(nrows - 1, Math.max(0, Math.floor(fy)));
+    const idx = j * ncols + i;
+    if (grids.depth[idx]! > 0) {
+      fetchM = fetchAtDir(grids.fetch, grids.meta, idx, wind.windDirDeg);
+    }
+  }
+  return {
+    lon: lng,
+    lat,
+    x: e.point.x,
+    y: e.point.y,
+    onWater,
+    hsM,
+    depthM: onWater ? depthM! : 0,
+    fetchM,
+    windSpeedMps: field?.speedMps ?? (windMode ? null : wind?.windSpeedMps ?? null),
+    windDirDeg: field?.dirDeg ?? (windMode ? null : wind?.windDirDeg ?? null),
+    gustMps: field || windMode ? null : wind?.gustMps ?? null,
+    tempC: airC,
+  };
+}
+
 function ensureWindArrowsSource(map: MapLibreMap) {
   if (!map.getSource("wind-arrows")) {
     map.addSource("wind-arrows", { type: "geojson", data: EMPTY_FC });
@@ -1125,6 +1210,9 @@ export function MapView({
     typeof window !== "undefined" ? loadOverlay() : "wind",
   );
   const [legendHoverT, setLegendHoverT] = useState<number | null>(null);
+  const [legendTipOpen, setLegendTipOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
+  const layersRef = useRef<HTMLDivElement>(null);
   const [windGlyph, setWindGlyph] = useState<WindGlyphId>(() =>
     typeof window !== "undefined" ? loadWindGlyph() : "particles",
   );
@@ -1148,15 +1236,19 @@ export function MapView({
   useEffect(() => {
     onOverlayChange?.(overlay);
     setLegendHoverT(null);
+    setLegendTipOpen(false);
   }, [overlay, onOverlayChange]);
 
   gridsRef.current = grids;
   shorelineRef.current = shoreline;
 
   const hs = useMemo(() => {
-    if (!wind) return null;
+    if (!wind || overlay !== "waves") return null;
+    if (windSlice && !windSlice.uniform) {
+      return computeHsGridFromWind(grids, windSlice);
+    }
     return computeHsGrid(grids, wind.windSpeedMps, wind.windDirDeg);
-  }, [grids, wind]);
+  }, [grids, wind, overlay, windSlice]);
 
   hsRef.current = hs;
   windRef.current = wind;
@@ -1196,7 +1288,11 @@ export function MapView({
     // style.load fires when the style JSON is ready. map "load" waits for every
     // raster source, including hidden Satellite/Topo tiles, so overlays never boot.
     const bootOverlays = () => {
-      if (map.getLayer("lakes-labels")) return;
+      if (map.getLayer("lakes-labels")) {
+        setReady(true);
+        return;
+      }
+      try {
       map.resize();
 
       map.addSource("alberta-mask", { type: "geojson", data: ALBERTA_MASK });
@@ -1674,6 +1770,10 @@ export function MapView({
         viewModeRef.current = "lake";
       }
       setReady(true);
+      } catch (err) {
+        console.error("Map overlays failed", err);
+        setReady(true);
+      }
     };
     if (map.isStyleLoaded()) bootOverlays();
     else map.once("style.load", bootOverlays);
@@ -1684,75 +1784,42 @@ export function MapView({
       if (followCursorRef.current) onFollowCursorChangeRef.current?.(false);
     });
 
+    const coarseRef = {
+      current:
+        typeof window !== "undefined" &&
+        window.matchMedia("(pointer: coarse)").matches,
+    };
+    const onTouchStart = () => {
+      coarseRef.current = true;
+    };
+    window.addEventListener("touchstart", onTouchStart, {
+      passive: true,
+      once: true,
+    });
+    let tapHoverTimer: number | undefined;
+    const showTapHover = (info: HoverInfo | null) => {
+      setHover(info);
+      window.clearTimeout(tapHoverTimer);
+      if (info) {
+        tapHoverTimer = window.setTimeout(() => setHover(null), 8000);
+      }
+    };
+
     map.on("mousemove", (e: MapMouseEvent) => {
-      const { lng, lat } = e.lngLat;
-      const g = gridsRef.current;
-      const depthM = sampleGrid(g.depth, g.meta, lng, lat);
-      const onWater = depthM != null && depthM > 0;
-      const slice = spatialWindSlice(
-        windSliceRef.current,
-        simulatingRef.current,
+      if (coarseRef.current) return;
+      setHover(
+        hoverFromMapEvent(
+          e,
+          gridsRef.current,
+          overlayRef.current,
+          simulatingRef.current,
+          windSliceRef.current,
+          heatmapStyleRef.current,
+          tempSliceRef.current ?? null,
+          hsRef.current,
+          windRef.current,
+        ),
       );
-      const field = slice
-        ? sampleWindField(slice, lng, lat, heatmapStyleRef.current)
-        : null;
-      const windMode = overlayRef.current === "wind";
-      const tempMode = overlayRef.current === "temp";
-      const tempSlice = tempSliceRef.current ?? null;
-      const airC = tempSlice
-        ? sampleTempField(tempSlice, lng, lat, heatmapStyleRef.current)
-        : null;
-      if (windMode) {
-        const overField = slice ? inWindFieldExtent(slice, lng, lat) : false;
-        if (!overField && !onWater && !field) {
-          setHover(null);
-          return;
-        }
-      } else if (tempMode) {
-        const overField = tempSlice
-          ? lng >= tempSlice.west &&
-            lng <= tempSlice.east &&
-            lat >= tempSlice.south &&
-            lat <= tempSlice.north
-          : false;
-        if (!overField && !onWater && airC == null) {
-          setHover(null);
-          return;
-        }
-      } else if (!onWater) {
-        setHover(null);
-        return;
-      }
-      const currentHs = hsRef.current;
-      const currentWind = windRef.current;
-      const hsM =
-        onWater && currentHs ? sampleGrid(currentHs, g.meta, lng, lat) : null;
-      let fetchM: number | null = null;
-      if (onWater && currentWind) {
-        const { ncols, nrows, west, south, east, north } = g.meta;
-        const fx = ((lng - west) / (east - west)) * ncols;
-        const fy = ((north - lat) / (north - south)) * nrows;
-        const i = Math.min(ncols - 1, Math.max(0, Math.floor(fx)));
-        const j = Math.min(nrows - 1, Math.max(0, Math.floor(fy)));
-        const idx = j * ncols + i;
-        if (g.depth[idx]! > 0) {
-          fetchM = fetchAtDir(g.fetch, g.meta, idx, currentWind.windDirDeg);
-        }
-      }
-      setHover({
-        lon: lng,
-        lat,
-        x: e.point.x,
-        y: e.point.y,
-        onWater,
-        hsM,
-        depthM: onWater ? depthM! : 0,
-        fetchM,
-        windSpeedMps: field?.speedMps ?? (windMode ? null : currentWind?.windSpeedMps ?? null),
-        windDirDeg: field?.dirDeg ?? (windMode ? null : currentWind?.windDirDeg ?? null),
-        gustMps: field || windMode ? null : currentWind?.gustMps ?? null,
-        tempC: airC,
-      });
     });
 
     map.on("click", (e: MapMouseEvent) => {
@@ -1782,13 +1849,48 @@ export function MapView({
           fitBoundsPad(map, bounds, 800);
         }
         onSelectLakeRef.current?.(id);
+        if (coarseRef.current) showTapHover(null);
         return;
       }
       const { lng, lat } = e.lngLat;
       const g = gridsRef.current;
       const depthM = sampleGrid(g.depth, g.meta, lng, lat);
-      if (depthM == null || depthM <= 0) return;
-      onChoosePointRef.current?.({ lon: lng, lat });
+      const info = hoverFromMapEvent(
+        e,
+        g,
+        overlayRef.current,
+        simulatingRef.current,
+        windSliceRef.current,
+        heatmapStyleRef.current,
+        tempSliceRef.current ?? null,
+        hsRef.current,
+        windRef.current,
+      );
+      if (depthM != null && depthM > 0) {
+        onChoosePointRef.current?.({ lon: lng, lat });
+      }
+      if (coarseRef.current) {
+        if (info) {
+          showTapHover(info);
+        } else if (depthM != null && depthM > 0) {
+          showTapHover({
+            lon: lng,
+            lat,
+            x: e.point.x,
+            y: e.point.y,
+            onWater: true,
+            hsM: null,
+            depthM,
+            fetchM: null,
+            windSpeedMps: null,
+            windDirDeg: null,
+            gustMps: null,
+            tempC: null,
+          });
+        } else {
+          showTapHover(null);
+        }
+      }
     });
 
     map.on("mouseenter", "lakes-all-fill", () => {
@@ -1798,7 +1900,10 @@ export function MapView({
       map.getCanvas().style.cursor = "";
     });
 
-    map.on("mouseout", () => setHover(null));
+    map.on("mouseout", () => {
+      if (coarseRef.current) return;
+      setHover(null);
+    });
 
     const syncWindLabelOffset = () => {
       if (!map.getLayer("wind-dir")) return;
@@ -1806,9 +1911,23 @@ export function MapView({
     };
     map.on("zoom", syncWindLabelOffset);
 
+    let lastW = 0;
+    let lastH = 0;
     const refitIfNeeded = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w === lastW && h === lastH) return;
+      const dh = Math.abs(h - lastH);
+      const first = lastW === 0;
+      lastW = w;
+      lastH = h;
       map.resize();
-      if (followCursorRef.current || userMovedRef.current) return;
+      // Skip camera refit on tiny iOS toolbar/resizes — that loop freezes the map.
+      if (first || followCursorRef.current || userMovedRef.current || dh < 24) {
+        return;
+      }
       if (viewModeRef.current === "all" && allShorelinesRef.current) {
         if (!lakesVectorReadyRef.current) return;
         fitFeatureCollection(map, allShorelinesRef.current, 0);
@@ -1828,6 +1947,8 @@ export function MapView({
 
     return () => {
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.clearTimeout(tapHoverTimer);
       ro.disconnect();
       map.remove();
       mapRef.current = null;
@@ -1856,7 +1977,6 @@ export function MapView({
         canvas.width = size.width;
         canvas.height = size.height;
       }
-      shoreMaskRef.current = buildShoreMaskCanvas(meta, shoreline);
       const hsSrc = map.getSource("hs") as CanvasSource | undefined;
       hsSrc?.setCoordinates(hsCoordinates(meta));
     }
@@ -1986,14 +2106,18 @@ export function MapView({
       canvas.width = size.width;
       canvas.height = size.height;
     }
+    if (spot.spotId !== selectedLakeId || showsFieldHeatmap(overlay)) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    if (overlay !== "waves" && overlay !== "depth") {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
     let mask = shoreMaskRef.current;
     if (!mask || mask.width !== size.width || mask.height !== size.height) {
       mask = buildShoreMaskCanvas(grids.meta, shorelineRef.current);
       shoreMaskRef.current = mask;
-    }
-    if (spot.spotId !== selectedLakeId || showsFieldHeatmap(overlay)) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      return;
     }
     if (overlay === "depth") {
       paintHsClipped(
@@ -2394,6 +2518,25 @@ export function MapView({
     src.setData(windPerpTicksGeoJSON(gpxWindTicks, gpxWindTickIndex ?? null));
   }, [gpxWindTicks, gpxWindTickIndex, ready]);
 
+  useEffect(() => {
+    if (!layersOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLayersOpen(false);
+    };
+    const onPointer = (e: PointerEvent) => {
+      if (e.target instanceof Element && layersRef.current?.contains(e.target)) {
+        return;
+      }
+      setLayersOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointer);
+    };
+  }, [layersOpen]);
+
   const legendNotes = useMemo(() => {
     const source =
       overlay === "depth"
@@ -2486,6 +2629,20 @@ export function MapView({
           {heatmapLoadingLabel}
         </div>
       ) : null}
+      <div className="map-layers-wrap" ref={layersRef}>
+        <button
+          type="button"
+          className="layers-btn"
+          aria-expanded={layersOpen}
+          aria-controls="map-layers"
+          onClick={() => setLayersOpen((open) => !open)}
+        >
+          Layers
+        </button>
+        <div
+          id="map-layers"
+          className={`map-layers${layersOpen ? " is-open" : ""}`}
+        >
       <div className="basemap-toggle overlay-toggle" role="group" aria-label="Map overlay">
         <button
           type="button"
@@ -2618,6 +2775,8 @@ export function MapView({
           Satellite
         </button>
       </div>
+        </div>
+      </div>
       <div className="legend">
         <div className="legend-title">
           <span>
@@ -2627,12 +2786,14 @@ export function MapView({
                 ? `Wind speed (${legendUnit(overlay, units)})`
                 : overlay === "temp"
                   ? `Temperature (${legendUnit(overlay, units)})`
-                  : `Wave height Hs (${legendUnit(overlay, units)})`}
+                  : `Wave height (${legendUnit(overlay, units)})`}
           </span>
           <button
             type="button"
-            className="legend-info"
+            className={`legend-info${legendTipOpen ? " is-open" : ""}`}
             aria-label={legendNotes.join(" ")}
+            aria-expanded={legendTipOpen}
+            onClick={() => setLegendTipOpen((open) => !open)}
           >
             <span className="legend-info-mark" aria-hidden>
               i

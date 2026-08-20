@@ -63,6 +63,16 @@ export function formatHourLabel(d: Date): string {
     .toLowerCase();
 }
 
+/** Selected forecast hour, e.g. "Wed, Aug 19, 10 PM". */
+export function formatSelectedWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+  });
+}
+
 export function dayKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }

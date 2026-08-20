@@ -9,6 +9,7 @@ import {
   loadSelectedCompareLakes,
   loadingRows,
   MAX_COMPARE_LAKES,
+  promoteSelectedLake,
   saveSelectedCompareLakes,
   sortCompareRows,
   snapshotAtTime,
@@ -159,9 +160,15 @@ export function ComparePage() {
         setSelected((prev) => {
           const enabled = new Set(metas.map((m) => m.id));
           const kept = prev.filter((id) => enabled.has(id));
-          const fallback = metas[0]?.id;
-          const next = kept.length > 0 ? kept : fallback ? [fallback] : [];
+          const mapId = loadLakeId();
+          const fallback = enabled.has(mapId) ? mapId : metas[0]?.id;
+          const next = kept.length > 0
+            ? promoteSelectedLake(kept, fallback ?? "")
+            : fallback
+              ? [fallback]
+              : [];
           saveSelectedCompareLakes(next);
+          if (next[0]) saveLakeId(next[0]);
           return next;
         });
         await loadCompareForecasts(
@@ -260,8 +267,12 @@ export function ComparePage() {
 
   function onToggleLake(id: string) {
     setSelected((prev) => {
-      const next = toggleSelectedLake(prev, id);
+      const toggled = toggleSelectedLake(prev, id);
+      const next = toggled.includes(id)
+        ? promoteSelectedLake(toggled, id)
+        : toggled;
       saveSelectedCompareLakes(next);
+      if (next[0]) saveLakeId(next[0]);
       return next;
     });
   }
@@ -360,7 +371,7 @@ export function ComparePage() {
                 />
                 <SortTh
                   className="compare-at"
-                  label="Hs"
+                  label="Waves"
                   value="hs"
                   sort={sort}
                   onSort={setSort}
@@ -369,7 +380,7 @@ export function ComparePage() {
                 <th className="compare-at">Conditions</th>
                 <SortTh
                   className="compare-peak compare-group-start"
-                  label="Hs"
+                  label="Waves"
                   value="peakHs"
                   sort={sort}
                   onSort={setSort}
