@@ -505,6 +505,15 @@
   background: rgba(44, 90, 130, 0.12);
 }
 
+.overlay-nav button.overlay-nav-stations {
+  color: #4a6d8c;
+}
+
+.overlay-nav button.overlay-nav-stations.is-on {
+  color: #2c5a82;
+  background: rgba(44, 90, 130, 0.12);
+}
+
 .readout {
   display: flex;
   flex-wrap: wrap;
@@ -1269,6 +1278,14 @@
 
 .wind-particles.is-on {
   display: block;
+}
+
+.wind-particles.is-invert {
+  mix-blend-mode: difference;
+}
+
+.wind-particles.is-lift {
+  opacity: 0.5;
 }
 
 .lake-outlines {

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-cold-lake",
+  "identity": {
+    "name": "Cold Lake",
+    "region": "Northern Alberta, Canada",
+    "nearestCity": "Cold Lake",
+    "latitude": 54.55,
+    "longitude": -110.1,
+    "elevationM": 535,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "sail"
+    ],
+    "waterType": "inland_lake",
+    "summary": "One of Alberta's largest and deepest lakes. Cold Lake Sailing School and city marina on the southeast shore. Extends into Saskatchewan. AGS bathymetry."
+  },
+  "geometry": {
+    "shape": "large_irregular",
+    "surroundingTerrain": "boreal_plain",
+    "notes": "Deep thermal basin. Provincial park and city marina on the Alberta (west/south) side."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "NW",
+      "W",
+      "SE"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 54.55,
+      "longitude": -110.1,
+      "description": "Open west-central basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "cold-lake-marina",
+      "name": "Cold Lake Marina",
+      "latitude": 54.465,
+      "longitude": -110.182,
+      "shore": "southeast",
+      "bestWindDirs": [
+        "NW",
+        "W",
+        "N"
+      ],
+      "notes": "City marina and sailing school launch."
+    }
+  ]
+}

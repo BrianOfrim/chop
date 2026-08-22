@@ -161,7 +161,7 @@ export function ComparePage() {
           const enabled = new Set(metas.map((m) => m.id));
           const kept = prev.filter((id) => enabled.has(id));
           const mapId = loadLakeId();
-          const fallback = enabled.has(mapId) ? mapId : metas[0]?.id;
+          const fallback = mapId && enabled.has(mapId) ? mapId : metas[0]?.id;
           const next = kept.length > 0
             ? promoteSelectedLake(kept, fallback ?? "")
             : fallback

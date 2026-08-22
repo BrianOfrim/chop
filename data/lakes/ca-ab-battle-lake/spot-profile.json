@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-battle-lake",
+  "identity": {
+    "name": "Battle Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Winfield / Wetaskiwin",
+    "latitude": 52.967,
+    "longitude": -114.193,
+    "elevationM": 850,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf"
+    ],
+    "waterType": "inland_lake",
+    "summary": "Deep parkland lake west of Pigeon Lake. AGS bathymetry. Public access is limited; confirm launch before going."
+  },
+  "geometry": {
+    "shape": "elongated_narrow",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "Steep wooded shores. Headwaters of the Battle River."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "NW",
+      "W",
+      "SE"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 52.967,
+      "longitude": -114.193,
+      "description": "Mid-lake"
+    }
+  ]
+}

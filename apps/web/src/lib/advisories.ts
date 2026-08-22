@@ -27,7 +27,8 @@ export async function fetchAdvisories(): Promise<AdvisoriesResponse> {
 
 export function lakeAdvisory(
   data: AdvisoriesResponse | null,
-  lakeId: string,
+  lakeId: string | null,
 ): LakeAdvisory | undefined {
+  if (!lakeId) return undefined;
   return data?.lakes[lakeId];
 }

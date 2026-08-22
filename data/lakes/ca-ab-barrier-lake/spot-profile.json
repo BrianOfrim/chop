@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-barrier-lake",
+  "identity": {
+    "name": "Barrier Lake",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Seebe / Canmore",
+    "latitude": 51.017,
+    "longitude": -115.06,
+    "elevationM": 1375,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "windsurf"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Official Alberta Parks Kananaskis kite/windsurf water on Hwy 40. Cold glacier-fed reservoir; wetsuit required. Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "elongated_reservoir",
+    "surroundingTerrain": "mountain_valley",
+    "notes": "Barrier Dam at the north end. Water level held low for flood management; sandbars at the south end."
+  },
+  "windRegime": {
+    "primaryType": "gap_venturi",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": true,
+    "orographic": "mountain_valley",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 51.017,
+      "longitude": -115.06,
+      "description": "Mid-reservoir"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "barrier-day-use",
+      "name": "Barrier Lake day use",
+      "latitude": 51.027,
+      "longitude": -115.056,
+      "shore": "east",
+      "bestWindDirs": [
+        "W",
+        "SW",
+        "NW"
+      ],
+      "notes": "Hwy 40 day-use / boat launch."
+    }
+  ]
+}

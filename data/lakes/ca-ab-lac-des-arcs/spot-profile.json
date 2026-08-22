@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-lac-des-arcs",
+  "identity": {
+    "name": "Lac des Arcs",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Canmore / Exshaw",
+    "latitude": 51.056,
+    "longitude": -115.185,
+    "elevationM": 1300,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "windsurf"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Bow Valley reservoir paired with Barrier Lake on the official Kananaskis kite/windsurf list. Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "small_reservoir",
+    "surroundingTerrain": "mountain_valley",
+    "notes": "Hamlet of Lac Des Arcs on the south shore. Trans-Canada on the north. Gusty Bow Valley wind."
+  },
+  "windRegime": {
+    "primaryType": "gap_venturi",
+    "secondaryType": "chinook_foehn",
+    "gapVenturi": true,
+    "orographic": "mountain_valley",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "E"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 51.056,
+      "longitude": -115.185,
+      "description": "Mid-lake"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "lac-des-arcs-hamlet",
+      "name": "Lac Des Arcs hamlet",
+      "latitude": 51.054,
+      "longitude": -115.158,
+      "shore": "southeast",
+      "bestWindDirs": [
+        "W",
+        "NW",
+        "SW"
+      ],
+      "notes": "Hamlet / day-use access; confirm public launch."
+    }
+  ]
+}

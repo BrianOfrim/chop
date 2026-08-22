@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-chain-lakes",
+  "identity": {
+    "name": "Chain Lakes",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Nanton",
+    "latitude": 50.27,
+    "longitude": -114.2,
+    "elevationM": 1295,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "sail",
+      "windsurf"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Narrow foothills reservoir SW of Nanton. Alberta Parks lists sailing and windsurfing; 12 km/h powerboat limit. Depth is a shore-distance fill (AGS “Chain Lakes” is a different waterbody near Camrose)."
+  },
+  "geometry": {
+    "shape": "elongated_narrow",
+    "surroundingTerrain": "foothills",
+    "notes": "Provincial park campground on the east shore. No towing."
+  },
+  "windRegime": {
+    "primaryType": "chinook_foehn",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": true,
+    "orographic": "foothills_gap",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 50.27,
+      "longitude": -114.2,
+      "description": "Mid-reservoir"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "chain-lakes-pp",
+      "name": "Chain Lakes Provincial Park",
+      "latitude": 50.27,
+      "longitude": -114.19,
+      "shore": "east",
+      "bestWindDirs": [
+        "W",
+        "SW",
+        "NW"
+      ],
+      "notes": "Campground boat launch."
+    }
+  ]
+}

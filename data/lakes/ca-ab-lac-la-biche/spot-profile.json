@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-lac-la-biche",
+  "identity": {
+    "name": "Lac La Biche",
+    "region": "Northern Alberta, Canada",
+    "nearestCity": "Lac La Biche",
+    "latitude": 54.83,
+    "longitude": -111.97,
+    "elevationM": 540,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "kite",
+      "wing",
+      "windsurf",
+      "sail"
+    ],
+    "waterType": "inland_lake",
+    "summary": "Large prairie lake with three kiteforum launches (Mission Beach, Main Pier, Sir Winston Churchill). Long fetch and winter ice. AGS bathymetry."
+  },
+  "geometry": {
+    "shape": "large_irregular",
+    "surroundingTerrain": "boreal_plain",
+    "notes": "Town on the south shore. Mission historical site on the northwest. Churchill Park on a south-basin peninsula/island."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "NW",
+      "SE",
+      "W"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 54.83,
+      "longitude": -111.97,
+      "description": "Main basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "mission-beach",
+      "name": "Mission Beach",
+      "latitude": 54.868,
+      "longitude": -112.095,
+      "shore": "northwest",
+      "bestWindDirs": [
+        "SE",
+        "E",
+        "S"
+      ],
+      "notes": "Kiteforum NW-facing sand beach near the Mission historic site."
+    },
+    {
+      "id": "churchill-park",
+      "name": "Sir Winston Churchill Park",
+      "latitude": 54.775,
+      "longitude": -111.955,
+      "shore": "south",
+      "bestWindDirs": [
+        "N",
+        "NW",
+        "W"
+      ],
+      "notes": "Provincial park peninsula / island access."
+    }
+  ]
+}

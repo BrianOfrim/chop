@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-elkwater-lake",
+  "identity": {
+    "name": "Elkwater Lake",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Elkwater / Medicine Hat",
+    "latitude": 49.662,
+    "longitude": -110.298,
+    "elevationM": 1230,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "sail",
+      "windsurf"
+    ],
+    "waterType": "inland_lake",
+    "summary": "Cypress Hills lake with marina and two launches. Alberta Parks lists sailing and windsurfing. AGS bathymetry."
+  },
+  "geometry": {
+    "shape": "irregular_basin",
+    "surroundingTerrain": "cypress_hills",
+    "notes": "Townsite and marina on the south shore. West End day use for water-ski / windsurf."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "prairie_thermal",
+    "gapVenturi": false,
+    "orographic": "hills_roughness",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 49.662,
+      "longitude": -110.298,
+      "description": "Mid-lake"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "elkwater-marina",
+      "name": "Elkwater marina / main beach",
+      "latitude": 49.66,
+      "longitude": -110.282,
+      "shore": "south",
+      "bestWindDirs": [
+        "N",
+        "NW",
+        "W"
+      ],
+      "notes": "Townsite marina and beach."
+    }
+  ]
+}

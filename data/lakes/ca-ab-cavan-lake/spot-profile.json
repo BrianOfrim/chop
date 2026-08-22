@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-cavan-lake",
+  "identity": {
+    "name": "Cavan Lake",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Medicine Hat",
+    "latitude": 49.934,
+    "longitude": -110.411,
+    "elevationM": 760,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "windsurf"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Small irrigation reservoir east of Medicine Hat. Historic windsurf destination (flat and fast). Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "small_reservoir",
+    "surroundingTerrain": "prairie_open",
+    "notes": "Gros Ventre Creek / Cavan Lake Reservoir. Level varies with irrigation."
+  },
+  "windRegime": {
+    "primaryType": "chinook_foehn",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 49.934,
+      "longitude": -110.411,
+      "description": "Mid-reservoir"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-buck-lake",
+  "identity": {
+    "name": "Buck Lake",
+    "region": "Central Alberta, Canada",
+    "nearestCity": "Buck Lake / Drayton Valley",
+    "latitude": 52.984,
+    "longitude": -114.764,
+    "elevationM": 860,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "windsurf",
+      "sail"
+    ],
+    "waterType": "inland_lake",
+    "summary": "Parkland lake west of Pigeon. Alberta Parks campground lists wind-surfing. AGS bathymetry."
+  },
+  "geometry": {
+    "shape": "irregular_basin",
+    "surroundingTerrain": "parkland_rolling",
+    "notes": "PRA campground on the east shore near the canal."
+  },
+  "windRegime": {
+    "primaryType": "synoptic_frontal",
+    "secondaryType": "lake_breeze_thermal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "W",
+      "NW",
+      "SE"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 52.984,
+      "longitude": -114.764,
+      "description": "Mid-lake"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "buck-pra",
+      "name": "Buck Lake PRA",
+      "latitude": 52.98,
+      "longitude": -114.72,
+      "shore": "east",
+      "bestWindDirs": [
+        "W",
+        "NW",
+        "SW"
+      ],
+      "notes": "Small campground / day-use access."
+    }
+  ]
+}

@@ -25,8 +25,8 @@ const OCCUPANCY_CELL_PX = 26;
 const HEAD_R = 1.15;
 export const WIND_STREAK_RGB = "168,172,176";
 export const WIND_STREAK_COLOR = `rgb(${WIND_STREAK_RGB})`;
-/** Lighter than the arrow streaks so moving particles read on the heatmap. */
-const PARTICLE_RGB = "232,236,240";
+/** White so CSS mix-blend-mode: difference inverts the map under each streak. */
+const PARTICLE_RGB = "255,255,255";
 const FADE_OUT_SEC = 0.9;
 
 export function prefersReducedWindMotion(): boolean {
@@ -69,6 +69,35 @@ export function clearParticleCanvas(canvas: HTMLCanvasElement | null): void {
   if (!ctx) return;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+/** 1:1 backing-store copy for the white lift overlay above the invert canvas. */
+export function copyParticleCanvas(
+  source: HTMLCanvasElement,
+  dest: HTMLCanvasElement,
+): void {
+  if (dest.width !== source.width || dest.height !== source.height) {
+    dest.width = source.width;
+    dest.height = source.height;
+  }
+  const ctx = dest.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, dest.width, dest.height);
+  if (source.width < 1 || source.height < 1) return;
+  ctx.drawImage(source, 0, 0);
+}
+
+export function syncGlyphLiftCanvas(
+  source: HTMLCanvasElement | null,
+  lift: HTMLCanvasElement | null,
+): void {
+  if (!lift) return;
+  if (!source) {
+    clearParticleCanvas(lift);
+    return;
+  }
+  copyParticleCanvas(source, lift);
 }
 
 function makeParticle(lon: number, lat: number): Particle {
@@ -376,7 +405,8 @@ export function drawWindArrows(
   if (!synced) return;
   const { ctx, width, height } = synced;
   ctx.clearRect(0, 0, width, height);
-  ctx.strokeStyle = WIND_STREAK_COLOR;
+  // White + CSS mix-blend-mode: difference → RGB invert of the map under each shaft.
+  ctx.strokeStyle = "#fff";
   ctx.lineWidth = 1.7;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";

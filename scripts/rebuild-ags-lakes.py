@@ -124,6 +124,46 @@ LAKES = [
         "shore": "AGS DIG 2008-0858",
         "dem_label": "AGS DIG 2008-0520 (50 m Arc ASCII)",
     },
+    {
+        "id": "ca-ab-lac-la-biche",
+        "dem": "0379",
+        "boundary": "0717",
+        "contours": "0548",
+        "shore": "AGS DIG 2008-0717",
+        "dem_label": "AGS DIG 2008-0379 (50 m Arc ASCII)",
+    },
+    {
+        "id": "ca-ab-cold-lake",
+        "dem": "0403",
+        "boundary": "0741",
+        "contours": "0572",
+        "shore": "AGS DIG 2008-0741",
+        "dem_label": "AGS DIG 2008-0403 (50 m Arc ASCII)",
+    },
+    {
+        "id": "ca-ab-battle-lake",
+        "dem": "0374",
+        "boundary": "0712",
+        "contours": "0543",
+        "shore": "AGS DIG 2008-0712",
+        "dem_label": "AGS DIG 2008-0374 (50 m Arc ASCII)",
+    },
+    {
+        "id": "ca-ab-buck-lake",
+        "dem": "0386",
+        "boundary": "0724",
+        "contours": "0555",
+        "shore": "AGS DIG 2008-0724",
+        "dem_label": "AGS DIG 2008-0386 (50 m Arc ASCII)",
+    },
+    {
+        "id": "ca-ab-elkwater-lake",
+        "dem": "0413",
+        "boundary": "0751",
+        "contours": "0582",
+        "shore": "AGS DIG 2008-0751",
+        "dem_label": "AGS DIG 2008-0413 (50 m Arc ASCII)",
+    },
 ]
 
 

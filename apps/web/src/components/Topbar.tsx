@@ -33,9 +33,9 @@ type Props = {
   view: AppView;
   units: UnitPrefs;
   onUnits: (patch: Partial<UnitPrefs>) => void;
-  lakeId?: string;
+  lakeId?: string | null;
   lakes?: LakeIndexEntry[];
-  onLakeId?: (id: string) => void;
+  onLakeId?: (id: string | null) => void;
   mode?: WindMode;
   onModeChange?: (mode: WindMode) => void;
   basemap?: BasemapId;
@@ -58,7 +58,7 @@ export function Topbar({
   windGlyph,
   onWindGlyphChange,
 }: Props) {
-  const showLakePicker = view === "map" && lakes && onLakeId && lakeId != null;
+  const showLakePicker = view === "map" && lakes != null && onLakeId != null;
   const showModeNav = view === "map" && mode != null && onModeChange != null;
   const showBasemapNav = view === "map" && basemap != null && onBasemapChange != null;
   const showGlyphNav =
@@ -135,10 +135,11 @@ export function Topbar({
         <label className="lake-picker">
           Lake
           <select
-            value={lakeId}
-            onChange={(e) => onLakeId(e.target.value)}
+            value={lakeId ?? ""}
+            onChange={(e) => onLakeId(e.target.value || null)}
             disabled={lakes.length === 0}
           >
+            <option value="">Choose a lake</option>
             {lakes.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name}

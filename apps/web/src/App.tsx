@@ -69,6 +69,13 @@ import {
   saveRadar,
   type RadarWindows,
 } from "./lib/radar";
+import {
+  fetchStations,
+  loadStationsOn,
+  saveStationsOn,
+  STATIONS_POLL_MS,
+  type StationsResponse,
+} from "./lib/stations";
 import { WindSimPanel } from "./components/WindSimPanel";
 import { SessionWaveChart } from "./components/SessionWaveChart";
 import { SessionWindChart } from "./components/SessionWindChart";
@@ -192,7 +199,7 @@ function saveBottomCollapsed(on: boolean): void {
 
 export default function App() {
   const [lakes, setLakes] = useState<LakeIndexEntry[]>([]);
-  const [lakeId, setLakeId] = useState(loadLakeId);
+  const [lakeId, setLakeId] = useState<string | null>(loadLakeId);
   const [grids, setGrids] = useState<LakeGrids | null>(null);
   const [spot, setSpot] = useState<SpotProfile | null>(null);
   const [shoreline, setShoreline] = useState<GeoJSON.FeatureCollection | null>(
@@ -218,7 +225,7 @@ export default function App() {
   const [forecastPins, setForecastPins] = useState<ForecastPins>(() =>
     typeof window !== "undefined" ? loadForecastPins() : {},
   );
-  const forecastPoint = forecastPins[lakeId] ?? null;
+  const forecastPoint = lakeId ? forecastPins[lakeId] ?? null : null;
   const [mode, setMode] = useState<WindMode>("forecast");
   const [simSpeedMps, setSimSpeedMps] = useState(8);
   const [simDirDeg, setSimDirDeg] = useState(270);
@@ -241,6 +248,10 @@ export default function App() {
   const [radarOn, setRadarOn] = useState(() =>
     typeof window !== "undefined" ? loadRadar() : false,
   );
+  const [stationsOn, setStationsOn] = useState(() =>
+    typeof window !== "undefined" ? loadStationsOn() : false,
+  );
+  const [stations, setStations] = useState<StationsResponse | null>(null);
   const [radarWindows, setRadarWindows] = useState<RadarWindows | null>(null);
   const [radarSelectedIso, setRadarSelectedIso] = useState<string | null>(null);
   const [radarFollowLive, setRadarFollowLive] = useState(true);
@@ -256,7 +267,7 @@ export default function App() {
   const pendingSessionRef = useRef<GpxTrack | null>(null);
   const gpxInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => loadLakeId() != null);
   const [units, setUnits] = useState<UnitPrefs>(() =>
     typeof window !== "undefined" ? loadUnitPrefs() : { ...DEFAULT_UNITS },
   );
@@ -275,7 +286,7 @@ export default function App() {
     "idle" | "loading" | "ready" | "error"
   >("idle");
   const [needWindField, setNeedWindField] = useState(
-    () => radarOn || overlay === "wind" || overlay === "waves",
+    () => radarOn || overlay === "wind" || overlay === "waves" || overlay === "temp",
   );
   const [needTempField, setNeedTempField] = useState(
     () => !radarOn && overlay === "temp",
@@ -305,7 +316,7 @@ export default function App() {
   const onOverlayChange = useCallback((id: OverlayId) => {
     setOverlay(id);
     saveOverlay(id);
-    setNeedWindField(id === "wind" || id === "waves");
+    setNeedWindField(id === "wind" || id === "waves" || id === "temp");
     setNeedTempField(id === "temp");
     onRadarChange(false);
   }, [onRadarChange]);
@@ -347,6 +358,31 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [radarOn]);
+
+  useEffect(() => {
+    if (!stationsOn) return;
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const data = await fetchStations();
+        if (cancelled) return;
+        setStations(data);
+      } catch (err) {
+        console.error("Stations failed", err);
+      }
+    };
+    void sync();
+    const id = window.setInterval(() => void sync(), STATIONS_POLL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [stationsOn]);
 
   function updateUnits(patch: Partial<UnitPrefs>) {
     setUnits((prev) => {
@@ -402,9 +438,9 @@ export default function App() {
   }, [lakeId]);
 
   useEffect(() => {
-    if (lakes.length === 0) return;
+    if (lakes.length === 0 || !lakeId) return;
     if (!lakes.some((l) => l.id === lakeId)) {
-      setLakeId(lakes[0]!.id);
+      setLakeId(null);
     }
   }, [lakes, lakeId]);
 
@@ -481,6 +517,18 @@ export default function App() {
 
   // Decouple asset load from wind so the map shows even if HRDPS is slow/fails
   useEffect(() => {
+    if (!lakeId) {
+      setGrids(null);
+      setSpot(null);
+      setShoreline(null);
+      setDepthContours(null);
+      setForecast(null);
+      setWaterTemp(null);
+      setWaterTempStatus("idle");
+      setLoading(false);
+      setError(null);
+      return;
+    }
     const entry = lakes.find((l) => l.id === lakeId);
     if (!entry) return;
     let cancelled = false;
@@ -1190,8 +1238,7 @@ export default function App() {
         {historyStatus === "error" && mode === "history" && (
           <div className="banner error">Historical wind unavailable</div>
         )}
-        {grids && spot && shoreline && (
-          <MapView
+        <MapView
             grids={grids}
             spot={spot}
             shoreline={shoreline}
@@ -1217,6 +1264,8 @@ export default function App() {
             radarFollowLive={radarOn && radarFollowLive}
             radarOn={radarOn}
             radarWindows={radarWindows}
+            stationsOn={stationsOn}
+            stations={stations}
             forecastPoint={forecastPoint}
             gpxTrack={mode === "review" ? gpxTrack : null}
             gpxCursor={
@@ -1236,6 +1285,7 @@ export default function App() {
               saveReviewFollow(on);
             }}
             onChoosePoint={(point) => {
+              if (!lakeId) return;
               setForecastPins((prev) => {
                 const next = { ...prev, [lakeId]: point };
                 saveForecastPins(next);
@@ -1243,6 +1293,7 @@ export default function App() {
               });
             }}
             onClearPoint={() => {
+              if (!lakeId) return;
               setForecastPins((prev) => {
                 if (!(lakeId in prev)) return prev;
                 const next = { ...prev };
@@ -1259,7 +1310,6 @@ export default function App() {
             basemap={basemap}
             windGlyph={windGlyph}
           />
-        )}
         <WindSimPanel
           mode={mode}
           speedMps={simSpeedMps}
@@ -1359,11 +1409,12 @@ export default function App() {
                 aria-haspopup="dialog"
                 aria-controls="lake-info-panel"
                 title="Lake info"
+                disabled={!selectedLake && !spot}
                 onClick={() =>
                   setLakeInfoKind((kind) => (kind === "lake" ? null : "lake"))
                 }
               >
-                {selectedLake?.name ?? spot?.identity.name ?? "—"}
+                {selectedLake?.name ?? spot?.identity.name ?? "Choose a lake"}
               </button>
               {selectedAdvisory?.advisory && (
                 <button
@@ -1533,6 +1584,21 @@ export default function App() {
               onClick={() => onRadarChange(true)}
             >
               Radar
+            </button>
+            <button
+              type="button"
+              className={`overlay-nav-stations${stationsOn ? " is-on" : ""}`}
+              aria-pressed={stationsOn}
+              title="Show MSC and NAV CANADA weather stations"
+              onClick={() => {
+                setStationsOn((on) => {
+                  const next = !on;
+                  saveStationsOn(next);
+                  return next;
+                });
+              }}
+            >
+              Stations
             </button>
           </div>
           </div>

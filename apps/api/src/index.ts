@@ -20,6 +20,7 @@ import {
   type StravaActivitySummary,
 } from "./track.ts";
 import { getAdvisories } from "./advisories.ts";
+import { getStations } from "./stations.ts";
 import {
   getForecastField,
   getForecastTempField,
@@ -63,6 +64,23 @@ app.get("/api/advisories", async (c) => {
     console.error(e);
     return c.json(
       { error: e instanceof Error ? e.message : "Advisories unavailable" },
+      502,
+    );
+  }
+});
+
+app.get("/api/stations", async (c) => {
+  try {
+    const { data, cache } = await getStations();
+    c.header("X-Stations-Cache", cache);
+    if (data.status === "unavailable") {
+      return c.json(data, 502);
+    }
+    return c.json(data);
+  } catch (e) {
+    console.error(e);
+    return c.json(
+      { error: e instanceof Error ? e.message : "Stations unavailable" },
       502,
     );
   }

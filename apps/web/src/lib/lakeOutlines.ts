@@ -43,7 +43,7 @@ export function drawLakeOutlines(
   canvas: HTMLCanvasElement,
   map: MapLibreMap,
   fc: GeoJSON.FeatureCollection | null | undefined,
-  selectedId: string,
+  selectedId: string | null,
   satellite: boolean,
   pins?: Array<{ lon: number; lat: number }> | { lon: number; lat: number } | null,
 ): void {

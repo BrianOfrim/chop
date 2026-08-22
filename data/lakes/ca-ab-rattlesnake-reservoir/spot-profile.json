@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-rattlesnake-reservoir",
+  "identity": {
+    "name": "Rattlesnake Reservoir",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Medicine Hat",
+    "latitude": 49.979,
+    "longitude": -111.052,
+    "elevationM": 780,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "windsurf",
+      "kite"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Sauder Reservoir / Rattlesnake Lake west of Medicine Hat. Historic windsurf spot; Golden Sheaf Park on the northeast shore. Depth is a shore-distance fill (published max about 22 m)."
+  },
+  "geometry": {
+    "shape": "elongated_reservoir",
+    "surroundingTerrain": "prairie_open",
+    "notes": "St. Mary Irrigation District reservoir. Level varies with irrigation demand."
+  },
+  "windRegime": {
+    "primaryType": "chinook_foehn",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 49.979,
+      "longitude": -111.052,
+      "description": "Mid-reservoir"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-spray-lakes-reservoir",
+  "identity": {
+    "name": "Spray Lakes Reservoir",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Canmore",
+    "latitude": 50.929,
+    "longitude": -115.329,
+    "elevationM": 1701,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "snowkite",
+      "kite",
+      "wing"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Kananaskis snowkite flagship (GrayKite / Sparrowhawk). Summer boat launch at Driftwood. Depth is a shore-distance fill (published max 65 m)."
+  },
+  "geometry": {
+    "shape": "elongated_reservoir",
+    "surroundingTerrain": "alpine_valley",
+    "notes": "Hydro reservoir in Spray Valley. Cold, gusty mountain wind. Smith-Dorrien Trail along the east shore."
+  },
+  "windRegime": {
+    "primaryType": "gap_venturi",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": true,
+    "orographic": "mountain_valley",
+    "primaryDirections": [
+      "S",
+      "SW",
+      "N",
+      "NW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 50.929,
+      "longitude": -115.329,
+      "description": "Main basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "driftwood",
+      "name": "Driftwood day use",
+      "latitude": 50.87,
+      "longitude": -115.36,
+      "shore": "east",
+      "bestWindDirs": [
+        "S",
+        "SW",
+        "N"
+      ],
+      "notes": "Summer boat launch. Winter snowkite access via Smith-Dorrien."
+    }
+  ]
+}

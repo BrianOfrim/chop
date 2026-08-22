@@ -50,19 +50,20 @@ export type LakeCompareRow = {
   error?: string;
 };
 
-export function loadSelectedCompareLakes(fallbackId: string): string[] {
+export function loadSelectedCompareLakes(fallbackId: string | null): string[] {
+  const fallback = fallbackId ? [fallbackId] : [];
   try {
     const raw = localStorage.getItem(SELECTED_KEY);
-    if (!raw) return [fallbackId];
+    if (!raw) return fallback;
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [fallbackId];
+    if (!Array.isArray(parsed)) return fallback;
     const ids = parsed.filter(
       (id): id is string => typeof id === "string" && id.length > 0,
     );
     const unique = [...new Set(ids)].slice(0, MAX_COMPARE_LAKES);
-    return unique.length > 0 ? unique : [fallbackId];
+    return unique.length > 0 ? unique : fallback;
   } catch {
-    return [fallbackId];
+    return fallback;
   }
 }
 

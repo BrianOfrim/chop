@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0",
+  "spotId": "ca-ab-pine-coulee-reservoir",
+  "identity": {
+    "name": "Pine Coulee Reservoir",
+    "region": "Southern Alberta, Canada",
+    "nearestCity": "Stavely",
+    "latitude": 50.159,
+    "longitude": -113.744,
+    "elevationM": 1040,
+    "timezone": "America/Edmonton",
+    "sports": [
+      "windsurf"
+    ],
+    "waterType": "inland_reservoir",
+    "summary": "Long irrigation reservoir west of Stavely in the Keho wind belt. Park copy lists windsurfing. Depth is a shore-distance fill."
+  },
+  "geometry": {
+    "shape": "elongated_reservoir",
+    "surroundingTerrain": "prairie_open",
+    "notes": "Dam at the south end. Campground and boat launch on the southwest shore. Submerged rocks near the southeast end."
+  },
+  "windRegime": {
+    "primaryType": "chinook_foehn",
+    "secondaryType": "synoptic_frontal",
+    "gapVenturi": false,
+    "orographic": "mild_roughness_only",
+    "primaryDirections": [
+      "W",
+      "SW",
+      "NW"
+    ]
+  },
+  "proxyPoints": [
+    {
+      "id": "open_lake_center",
+      "role": "background_model_point",
+      "latitude": 50.159,
+      "longitude": -113.744,
+      "description": "South-central basin"
+    }
+  ],
+  "ridePoints": [
+    {
+      "id": "pine-coulee-launch",
+      "name": "Pine Coulee boat launch",
+      "latitude": 50.136,
+      "longitude": -113.739,
+      "shore": "southwest",
+      "bestWindDirs": [
+        "NE",
+        "E",
+        "N"
+      ],
+      "notes": "Campground / public launch."
+    }
+  ]
+}

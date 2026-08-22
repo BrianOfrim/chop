@@ -202,6 +202,104 @@
       "region": "Alberta, Canada",
       "enabled": true,
       "path": "/lakes/ca-ab-st-mary-reservoir"
+    },
+    {
+      "id": "ca-ab-lac-la-biche",
+      "name": "Lac La Biche",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-lac-la-biche"
+    },
+    {
+      "id": "ca-ab-cold-lake",
+      "name": "Cold Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-cold-lake"
+    },
+    {
+      "id": "ca-ab-battle-lake",
+      "name": "Battle Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-battle-lake"
+    },
+    {
+      "id": "ca-ab-buck-lake",
+      "name": "Buck Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-buck-lake"
+    },
+    {
+      "id": "ca-ab-elkwater-lake",
+      "name": "Elkwater Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-elkwater-lake"
+    },
+    {
+      "id": "ca-ab-chain-lakes",
+      "name": "Chain Lakes",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-chain-lakes"
+    },
+    {
+      "id": "ca-ab-calling-lake",
+      "name": "Calling Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-calling-lake"
+    },
+    {
+      "id": "ca-ab-cavan-lake",
+      "name": "Cavan Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-cavan-lake"
+    },
+    {
+      "id": "ca-ab-rattlesnake-reservoir",
+      "name": "Rattlesnake Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-rattlesnake-reservoir"
+    },
+    {
+      "id": "ca-ab-spray-lakes-reservoir",
+      "name": "Spray Lakes Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-spray-lakes-reservoir"
+    },
+    {
+      "id": "ca-ab-barrier-lake",
+      "name": "Barrier Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-barrier-lake"
+    },
+    {
+      "id": "ca-ab-lac-des-arcs",
+      "name": "Lac des Arcs",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-lac-des-arcs"
+    },
+    {
+      "id": "ca-ab-pine-coulee-reservoir",
+      "name": "Pine Coulee Reservoir",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-pine-coulee-reservoir"
+    },
+    {
+      "id": "ca-ab-park-lake",
+      "name": "Park Lake",
+      "region": "Alberta, Canada",
+      "enabled": true,
+      "path": "/lakes/ca-ab-park-lake"
     }
   ]
 }
