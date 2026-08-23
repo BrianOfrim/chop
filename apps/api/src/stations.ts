@@ -1,8 +1,17 @@
 /**
- * Alberta MSC / NAV CANADA surface stations (SWOB) via GeoMet-OGC-API.
- * Locations from swob-stations; latest obs from swob-realtime (last 15 min
- * plus 2 h of non-minutely reports so hourly airports still appear).
+ * Alberta MSC / NAV CANADA surface stations (SWOB) via GeoMet-OGC-API,
+ * plus the PLWA Pigeon Lake monitoring buoy (WQData LIVE).
+ * Locations from swob-stations; observations from swob-realtime for the
+ * current UTC clock hour only. The buoy is appended when its latest
+ * sample falls in that same hour.
  */
+import {
+  getPigeonBuoy,
+  PLWA_PORTAL_URL,
+  resetPigeonBuoyCache,
+  type BuoyObs,
+} from "./pigeon-buoy.ts";
+
 const GEOMET_API = "https://api.weather.gc.ca";
 const UA = "chop-lake-app/1.0";
 const AB_BBOX = "-120,49,-110,60";
@@ -225,19 +234,46 @@ export function collapseLatest(rows: ObsRow[]): Map<string, ObsRow> {
   return out;
 }
 
+export function utcHourStart(ms: number): number {
+  return Math.floor(ms / 3_600_000) * 3_600_000;
+}
+
+/** True when `iso` falls in the same UTC clock hour as `nowMs`. */
+export function obsInCurrentHour(
+  iso: string | null | undefined,
+  nowMs = Date.now(),
+): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return false;
+  const start = utcHourStart(nowMs);
+  return t >= start && t < start + 3_600_000;
+}
+
+export function currentHourDatetime(nowMs = Date.now()): string {
+  const start = new Date(utcHourStart(nowMs))
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "Z");
+  const end = new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, "Z");
+  return `${start}/${end}`;
+}
+
 export function joinStations(
   catalog: CatalogRow[],
   obsByKey: Map<string, ObsRow>,
+  nowMs = Date.now(),
 ): StationFeature[] {
-  return catalog.map((stn) => {
-    const obs =
+  return catalog.flatMap((stn) => {
+    const raw =
       (stn.mscId ? obsByKey.get(stn.mscId) : undefined) ??
       obsByKey.get(stn.id) ??
       (stn.icao ? obsByKey.get(stn.icao) : undefined) ??
       obsByKey.get(stn.name);
-    const windDirDeg = obs?.windDirDeg ?? null;
+    const obs = raw && obsInCurrentHour(raw.observedAt, nowMs) ? raw : undefined;
+    if (!obs) return [];
+    const windDirDeg = obs.windDirDeg ?? null;
     const hasWind =
-      obs?.windSpeedMps != null &&
+      obs.windSpeedMps != null &&
       Number.isFinite(obs.windSpeedMps) &&
       windDirDeg != null &&
       Number.isFinite(windDirDeg)
@@ -252,29 +288,69 @@ export function joinStations(
       mscId: stn.mscId,
       icao: stn.icao,
       wmo: stn.wmo,
-      observedAt: obs?.observedAt ?? null,
-      airTempC: obs?.airTempC ?? null,
-      windSpeedMps: obs?.windSpeedMps ?? null,
+      observedAt: obs.observedAt,
+      airTempC: obs.airTempC,
+      windSpeedMps: obs.windSpeedMps,
       windDirDeg,
-      windGustMps: obs?.windGustMps ?? null,
-      relHum: obs?.relHum ?? null,
+      windGustMps: obs.windGustMps,
+      relHum: obs.relHum,
       bearing: windDirDeg != null ? toBearing(windDirDeg) : null,
       hasWind,
-      hasObs: obs ? 1 : 0,
+      hasObs: 1,
     };
-    return {
-      type: "Feature",
-      id: stn.id,
-      geometry: { type: "Point", coordinates: [stn.lon, stn.lat] },
-      properties: props,
-    };
+    return [
+      {
+        type: "Feature",
+        id: stn.id,
+        geometry: { type: "Point", coordinates: [stn.lon, stn.lat] },
+        properties: props,
+      },
+    ];
   });
 }
 
-function isoRange(msAgo: number, now = Date.now()): string {
-  const start = new Date(now - msAgo).toISOString().replace(/\.\d{3}Z$/, "Z");
-  const end = new Date(now).toISOString().replace(/\.\d{3}Z$/, "Z");
-  return `${start}/${end}`;
+export function featureFromBuoy(obs: BuoyObs): StationFeature {
+  const windDirDeg = obs.windDirDeg;
+  const hasWind =
+    obs.windSpeedMps != null &&
+    Number.isFinite(obs.windSpeedMps) &&
+    windDirDeg != null &&
+    Number.isFinite(windDirDeg)
+      ? 1
+      : 0;
+  return {
+    type: "Feature",
+    id: obs.id,
+    geometry: { type: "Point", coordinates: [obs.lon, obs.lat] },
+    properties: {
+      id: obs.id,
+      name: obs.name,
+      network: "PLWA",
+      provider: "PLWA",
+      autoMan: "AUTO",
+      mscId: null,
+      icao: null,
+      wmo: null,
+      observedAt: obs.observedAt,
+      airTempC: obs.airTempC,
+      windSpeedMps: obs.windSpeedMps,
+      windDirDeg,
+      windGustMps: obs.windGustMps,
+      relHum: obs.relHum,
+      bearing: windDirDeg != null ? toBearing(windDirDeg) : null,
+      hasWind,
+      hasObs: 1,
+    },
+  };
+}
+
+export function withCurrentHourBuoy(
+  features: StationFeature[],
+  buoy: BuoyObs | null,
+  nowMs = Date.now(),
+): StationFeature[] {
+  if (!buoy || !obsInCurrentHour(buoy.observedAt, nowMs)) return features;
+  return [...features, featureFromBuoy(buoy)];
 }
 
 async function fetchJson(url: string): Promise<GeoMetCollection> {
@@ -325,25 +401,27 @@ async function loadCatalog(): Promise<CatalogRow[]> {
   return rows;
 }
 
+function obsCacheFresh(now: number): boolean {
+  return (
+    obsCache != null &&
+    now - obsCache.storedAt < OBS_TTL_MS &&
+    utcHourStart(now) === utcHourStart(obsCache.storedAt)
+  );
+}
+
 async function loadObs(): Promise<Map<string, ObsRow>> {
   const now = Date.now();
-  if (obsCache && now - obsCache.storedAt < OBS_TTL_MS) {
+  if (obsCacheFresh(now) && obsCache) {
     return obsCache.payload;
   }
-  const [recent, hourly] = await Promise.all([
-    fetchAllItems("/collections/swob-realtime/items", {
-      bbox: AB_BBOX,
-      datetime: isoRange(15 * 60 * 1000, now),
-    }),
-    fetchAllItems("/collections/swob-realtime/items", {
-      bbox: AB_BBOX,
-      datetime: isoRange(2 * 60 * 60 * 1000, now),
-      "_is-minutely_obs-value": "false",
-    }),
-  ]);
-  const parsed = [...recent, ...hourly]
+  const features = await fetchAllItems("/collections/swob-realtime/items", {
+    bbox: AB_BBOX,
+    datetime: currentHourDatetime(now),
+  });
+  const parsed = features
     .map(parseObsFeature)
-    .filter((row): row is ObsRow => row != null);
+    .filter((row): row is ObsRow => row != null)
+    .filter((row) => obsInCurrentHour(row.observedAt, now));
   const collapsed = collapseLatest(parsed);
   obsCache = { payload: collapsed, storedAt: now };
   return collapsed;
@@ -359,19 +437,30 @@ function emptyResponse(status: StationsResponse["status"]): StationsResponse {
   };
 }
 
+function stationsSource(includeBuoy: boolean): string {
+  const geomet = `${GEOMET_API}/collections/swob-stations`;
+  return includeBuoy ? `${geomet} + ${PLWA_PORTAL_URL}` : geomet;
+}
+
 export async function getStations(): Promise<StationsResult> {
   const now = Date.now();
+  const buoyP = getPigeonBuoy(now);
   const catalogFresh =
     catalogCache != null && now - catalogCache.storedAt < CATALOG_TTL_MS;
-  const obsFresh = obsCache != null && now - obsCache.storedAt < OBS_TTL_MS;
-  if (catalogFresh && obsFresh && catalogCache && obsCache) {
+  if (catalogFresh && obsCacheFresh(now) && catalogCache && obsCache) {
+    const buoy = await buoyP;
+    const features = withCurrentHourBuoy(
+      joinStations(catalogCache.payload, obsCache.payload, now),
+      buoy,
+      now,
+    );
     return {
       data: {
         fetchedAt: new Date(obsCache.storedAt).toISOString(),
-        source: `${GEOMET_API}/collections/swob-stations`,
+        source: stationsSource(buoy != null),
         status: "ok",
         type: "FeatureCollection",
-        features: joinStations(catalogCache.payload, obsCache.payload),
+        features,
       },
       cache: "hit",
     };
@@ -379,31 +468,55 @@ export async function getStations(): Promise<StationsResult> {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const [catalog, obs] = await Promise.all([loadCatalog(), loadObs()]);
+      const [catalog, obs, buoy] = await Promise.all([
+        loadCatalog(),
+        loadObs(),
+        buoyP,
+      ]);
+      const t = Date.now();
       return {
         data: {
           fetchedAt: new Date().toISOString(),
-          source: `${GEOMET_API}/collections/swob-stations`,
+          source: stationsSource(buoy != null),
           status: "ok",
           type: "FeatureCollection",
-          features: joinStations(catalog, obs),
+          features: withCurrentHourBuoy(joinStations(catalog, obs, t), buoy, t),
         },
         cache: "miss",
       };
     } catch (err) {
+      const buoy = await buoyP;
+      const t = Date.now();
       if (catalogCache) {
         return {
           data: {
             fetchedAt: new Date(catalogCache.storedAt).toISOString(),
-            source: `${GEOMET_API}/collections/swob-stations`,
+            source: stationsSource(buoy != null),
             status: "ok",
             type: "FeatureCollection",
-            features: joinStations(
-              catalogCache.payload,
-              obsCache?.payload ?? new Map(),
+            features: withCurrentHourBuoy(
+              joinStations(
+                catalogCache.payload,
+                obsCache?.payload ?? new Map(),
+                t,
+              ),
+              buoy,
+              t,
             ),
           },
           cache: "stale",
+        };
+      }
+      if (buoy && obsInCurrentHour(buoy.observedAt, t)) {
+        return {
+          data: {
+            fetchedAt: new Date().toISOString(),
+            source: PLWA_PORTAL_URL,
+            status: "ok",
+            type: "FeatureCollection",
+            features: [featureFromBuoy(buoy)],
+          },
+          cache: "miss",
         };
       }
       console.error(err);
@@ -420,4 +533,5 @@ export function resetStationsCache(): void {
   catalogCache = null;
   obsCache = null;
   inflight = null;
+  resetPigeonBuoyCache();
 }

@@ -40,6 +40,12 @@ import {
 } from "../lib/windField";
 import { drawLakeOutlines, polygonRings } from "../lib/lakeOutlines";
 import {
+  drawFetchRay,
+  fetchRayFeatures,
+  resolveFetchRay,
+} from "../lib/fetchOverlay";
+import { drawStations } from "../lib/stationOverlay";
+import {
   buildAlbertaWindMask,
   paintTempField,
   paintWindField,
@@ -97,6 +103,15 @@ import {
   type TempFieldSlice,
 } from "../lib/tempField";
 import { TEMP_COLOR_MAX_C, TEMP_COLOR_MIN_C } from "../lib/tempScale";
+import {
+  cameraOnBoot,
+  cameraOnResize,
+  cameraOnSelection,
+  cameraOnShorelinesReady,
+  isMapCanvasReady,
+  lakeVectorSourceReady,
+  type CameraRequest,
+} from "../lib/mapCamera";
 
 export type OverlayId = "waves" | "depth" | "wind" | "temp";
 export type BasemapId = "map" | "satellite" | "topo";
@@ -834,7 +849,7 @@ function fitLake(
   duration = 0,
 ) {
   const canvas = map.getCanvas();
-  if (canvas.clientWidth < 8 || canvas.clientHeight < 8) return;
+  if (!isMapCanvasReady(canvas.clientWidth, canvas.clientHeight)) return;
   map.fitBounds(lakeBounds(meta, shoreline), {
     padding: { top: 48, bottom: 80, left: 72, right: 72 },
     duration,
@@ -860,16 +875,17 @@ function fitFeatureCollection(
   map: MapLibreMap,
   fc: GeoJSON.FeatureCollection,
   duration = 0,
-) {
+): boolean {
   const canvas = map.getCanvas();
-  if (canvas.clientWidth < 8 || canvas.clientHeight < 8) return;
+  if (!isMapCanvasReady(canvas.clientWidth, canvas.clientHeight)) return false;
   const bounds = geoBounds(fc);
-  if (!bounds) return;
+  if (!bounds) return false;
   map.fitBounds(bounds, {
     padding: { top: 48, bottom: 80, left: 72, right: 72 },
     duration,
     maxZoom: 13,
   });
+  return true;
 }
 
 function boundsByLakeId(
@@ -906,13 +922,52 @@ function fitBoundsPad(
   duration = 0,
 ) {
   const canvas = map.getCanvas();
-  if (canvas.clientWidth < 8 || canvas.clientHeight < 8) return false;
+  if (!isMapCanvasReady(canvas.clientWidth, canvas.clientHeight)) return false;
   map.fitBounds(bounds, {
     padding: { top: 48, bottom: 80, left: 72, right: 72 },
     duration,
     maxZoom: 13,
   });
   return true;
+}
+
+function publishMapCamera(
+  el: HTMLElement | null,
+  viewMode: "all" | "lake",
+  fittedLakeId: string | null,
+  zoom?: number,
+) {
+  if (!el) return;
+  el.dataset.mapView = viewMode;
+  if (fittedLakeId) el.dataset.fittedLake = fittedLakeId;
+  else delete el.dataset.fittedLake;
+  if (zoom != null) el.dataset.mapZoom = String(Math.round(zoom * 100) / 100);
+}
+
+function applyCameraRequest(
+  map: MapLibreMap,
+  req: CameraRequest,
+  overview: GeoJSON.FeatureCollection | null | undefined,
+  viewModeRef: { current: "all" | "lake" },
+  fittedLakeIdRef: { current: string | null },
+  container: HTMLElement | null,
+): boolean {
+  viewModeRef.current = req.viewMode;
+  let applied = false;
+  if (req.action === "fit-lake" && req.bounds) {
+    applied = fitBoundsPad(map, req.bounds, req.duration);
+    if (applied) fittedLakeIdRef.current = req.fittedLakeId;
+  } else if (req.action === "fit-overview") {
+    applied = overview ? fitFeatureCollection(map, overview, req.duration) : false;
+    fittedLakeIdRef.current = null;
+  }
+  publishMapCamera(
+    container,
+    viewModeRef.current,
+    fittedLakeIdRef.current,
+    applied ? map.getZoom() : undefined,
+  );
+  return applied;
 }
 
 function cloneFc(fc: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
@@ -1142,12 +1197,6 @@ const EMPTY_FC: GeoJSON.FeatureCollection = {
 };
 
 const WX_STATION_SOURCE = "wx-stations";
-const WX_STATION_LAYERS = [
-  "wx-stations-halo",
-  "wx-stations-dot",
-  "wx-stations-arrow",
-  "wx-stations-label",
-] as const;
 const WX_STATION_HIT_LAYERS = ["wx-stations-halo", "wx-stations-dot"] as const;
 
 type StationHover = {
@@ -1239,7 +1288,7 @@ function hoverFromMapEvent(
     depthM: onWater ? depthM! : 0,
     fetchM,
     windSpeedMps: field?.speedMps ?? (windMode ? null : wind?.windSpeedMps ?? null),
-    windDirDeg: field?.dirDeg ?? (windMode ? null : wind?.windDirDeg ?? null),
+    windDirDeg: field?.dirDeg ?? wind?.windDirDeg ?? null,
     gustMps: field || windMode ? null : wind?.gustMps ?? null,
     tempC: airC,
   };
@@ -1362,32 +1411,7 @@ function fetchRayGeoJSON(
   const end =
     findUpwindShorePoint(grids, shoreline, lon, lat, windFromDeg) ??
     ([lon, lat] as [number, number]);
-  return {
-    type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        properties: { kind: "fetch-ray" },
-        geometry: {
-          type: "LineString",
-          coordinates: [
-            [lon, lat],
-            end,
-          ],
-        },
-      },
-      {
-        type: "Feature",
-        properties: { kind: "hover" },
-        geometry: { type: "Point", coordinates: [lon, lat] },
-      },
-      {
-        type: "Feature",
-        properties: { kind: "shore" },
-        geometry: { type: "Point", coordinates: end },
-      },
-    ],
-  };
+  return fetchRayFeatures({ lon, lat, windFromDeg }, end);
 }
 
 export function MapView({
@@ -1434,6 +1458,8 @@ export function MapView({
   const windParticleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windGlyphLiftCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lakeOutlineCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawOutlinesRef = useRef<() => void>(() => {});
+  const stationOverlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windParticlesRef = useRef(createParticleField());
   const arrowLayoutRef = useRef<GeoJSON.FeatureCollection | null>(null);
   const albertaWindMaskRef = useRef<HTMLCanvasElement | null>(null);
@@ -1466,7 +1492,13 @@ export function MapView({
   selectedLakeIdRef.current = selectedLakeId;
   const forecastPointRef = useRef(forecastPoint);
   forecastPointRef.current = forecastPoint;
+  const stationsRef = useRef(stations);
+  stationsRef.current = stations;
+  const windUnitRef = useRef(units.wind);
+  windUnitRef.current = units.wind;
   const [hover, setHover] = useState<HoverInfo | null>(null);
+  const hoverRef = useRef<HoverInfo | null>(null);
+  hoverRef.current = hover;
   const [stationHover, setStationHover] = useState<StationHover | null>(null);
   const [selectedStationId, setSelectedStationId] = useState<string | null>(
     null,
@@ -1540,10 +1572,15 @@ export function MapView({
     if (!map || !ready) return;
     const src = map.getSource(WX_STATION_SOURCE) as GeoJSONSource | undefined;
     src?.setData(stationsOn && stations?.features.length ? stations : EMPTY_FC);
-    const vis = stationsOn ? "visible" : "none";
-    for (const id of WX_STATION_LAYERS) {
+    const hitVis = stationsOn ? "visible" : "none";
+    for (const id of WX_STATION_HIT_LAYERS) {
       if (map.getLayer(id)) {
-        map.setLayoutProperty(id, "visibility", vis);
+        map.setLayoutProperty(id, "visibility", hitVis);
+      }
+    }
+    for (const id of ["wx-stations-arrow", "wx-stations-label"] as const) {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, "visibility", "none");
       }
     }
     if (!stationsOn) {
@@ -1595,6 +1632,14 @@ export function MapView({
     });
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
+    map.on("moveend", () => {
+      publishMapCamera(
+        containerRef.current,
+        viewModeRef.current,
+        fittedLakeIdRef.current,
+        map.getZoom(),
+      );
+    });
     map.addControl(
       new NavigationControl({ visualizePitch: false, showCompass: false }),
       "top-right",
@@ -1841,6 +1886,8 @@ export function MapView({
         },
       });
 
+      // Invisible hit targets. Station ink is on .wx-stations-overlay so it
+      // sits above MapLibre heatmaps and the wind-particle canvas.
       map.addSource(WX_STATION_SOURCE, { type: "geojson", data: EMPTY_FC });
       map.addLayer({
         id: "wx-stations-halo",
@@ -1860,8 +1907,9 @@ export function MapView({
             9,
           ],
           "circle-color": "#f8f6f0",
-          "circle-opacity": 0.92,
+          "circle-opacity": 0,
           "circle-stroke-color": "#1c201e",
+          "circle-stroke-opacity": 0,
           "circle-stroke-width": 1.25,
         },
       });
@@ -1888,6 +1936,7 @@ export function MapView({
             "#2c5a82",
             "#8a8680",
           ],
+          "circle-opacity": 0,
         },
       });
       if (!map.hasImage("wind-arrow")) {
@@ -1934,44 +1983,6 @@ export function MapView({
           "text-color": "#1c201e",
           "text-halo-color": "rgba(248, 246, 240, 0.92)",
           "text-halo-width": 1.3,
-        },
-      });
-
-      map.addSource("fetch-ray", { type: "geojson", data: EMPTY_FC });
-      map.addLayer({
-        id: "fetch-ray-line",
-        type: "line",
-        source: "fetch-ray",
-        filter: ["==", ["get", "kind"], "fetch-ray"],
-        paint: {
-          "line-color": "#1c201e",
-          "line-width": 2.2,
-          "line-opacity": 0.9,
-          "line-dasharray": [1.4, 1.1],
-        },
-      });
-      map.addLayer({
-        id: "fetch-ray-points",
-        type: "circle",
-        source: "fetch-ray",
-        filter: ["in", ["get", "kind"], ["literal", ["hover", "shore"]]],
-        paint: {
-          "circle-radius": [
-            "match",
-            ["get", "kind"],
-            "hover",
-            4.5,
-            3.5,
-          ],
-          "circle-color": [
-            "match",
-            ["get", "kind"],
-            "hover",
-            "#1c201e",
-            "#f8f6f0",
-          ],
-          "circle-stroke-color": "#1c201e",
-          "circle-stroke-width": 1.5,
         },
       });
 
@@ -2137,19 +2148,36 @@ export function MapView({
       const selectedBounds = selected
         ? boundsByLakeRef.current.get(selected)
         : undefined;
-      if (selected && selectedBounds) {
-        viewModeRef.current = "lake";
-        fittedLakeIdRef.current = selected;
-        fitBoundsPad(map, selectedBounds, 0);
-      } else if (overview && overview.features.length > 0) {
-        viewModeRef.current = "all";
-        fitFeatureCollection(map, overview, 0);
-      } else if (meta && shoreline) {
+      const canvasEl = map.getCanvas();
+      const bootCam = cameraOnBoot({
+        selectedId: selected,
+        selectedBounds,
+        hasOverview: !!(overview && overview.features.length > 0),
+        canvasReady: isMapCanvasReady(canvasEl.clientWidth, canvasEl.clientHeight),
+      });
+      const booted = applyCameraRequest(
+        map,
+        bootCam,
+        overview,
+        viewModeRef,
+        fittedLakeIdRef,
+        containerRef.current,
+      );
+      if (!booted && meta && shoreline && bootCam.action === "none") {
         fitLake(map, meta, shoreline, 0);
         viewModeRef.current = "lake";
-        fittedLakeIdRef.current = selected;
-      } else {
-        viewModeRef.current = "all";
+        if (
+          selected &&
+          isMapCanvasReady(canvasEl.clientWidth, canvasEl.clientHeight)
+        ) {
+          fittedLakeIdRef.current = selected;
+        }
+        publishMapCamera(
+          containerRef.current,
+          viewModeRef.current,
+          fittedLakeIdRef.current,
+          map.getZoom(),
+        );
       }
       setReady(true);
       } catch (err) {
@@ -2369,21 +2397,37 @@ export function MapView({
       lastW = w;
       lastH = h;
       map.resize();
+      const canvasEl = map.getCanvas();
+      const selected = selectedLakeIdRef.current;
+      const bounds = selected
+        ? boundsByLakeRef.current.get(selected)
+        : undefined;
+      const resizeCam = cameraOnResize({
+        selectedId: selected,
+        selectedBounds: bounds,
+        fittedLakeId: fittedLakeIdRef.current,
+        userMoved: userMovedRef.current,
+        viewMode: viewModeRef.current,
+        canvasReady: isMapCanvasReady(canvasEl.clientWidth, canvasEl.clientHeight),
+        followCursor: followCursorRef.current,
+        firstLayout: first,
+        heightDelta: dh,
+      });
+      const resized = applyCameraRequest(
+        map,
+        resizeCam,
+        allShorelinesRef.current,
+        viewModeRef,
+        fittedLakeIdRef,
+        containerRef.current,
+      );
+      if (resized) return;
       // Skip camera refit on tiny iOS toolbar/resizes — that loop freezes the map.
       if (first || followCursorRef.current || userMovedRef.current || dh < 24) {
         return;
       }
       if (viewModeRef.current === "all" && allShorelinesRef.current) {
         if (!lakesVectorReadyRef.current) return;
-        fitFeatureCollection(map, allShorelinesRef.current, 0);
-        return;
-      }
-      const selected = selectedLakeIdRef.current;
-      const bounds = selected
-        ? boundsByLakeRef.current.get(selected)
-        : undefined;
-      if (bounds) {
-        fitBoundsPad(map, bounds, 0);
         return;
       }
       const g = gridsRef.current;
@@ -2439,24 +2483,27 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    if (!selectedLakeId) {
-      if (fittedLakeIdRef.current == null) return;
-      fittedLakeIdRef.current = null;
+    const canvasEl = map.getCanvas();
+    const bounds = selectedLakeId
+      ? boundsByLakeRef.current.get(selectedLakeId)
+      : undefined;
+    if (selectedLakeId && fittedLakeIdRef.current !== selectedLakeId) {
       userMovedRef.current = false;
-      viewModeRef.current = "all";
-      if (allShorelinesRef.current) {
-        fitFeatureCollection(map, allShorelinesRef.current, 800);
-      }
-      return;
     }
-    if (fittedLakeIdRef.current === selectedLakeId) return;
-    const bounds = boundsByLakeRef.current.get(selectedLakeId);
-    if (!bounds) return;
-    fittedLakeIdRef.current = selectedLakeId;
-    userMovedRef.current = false;
-    viewModeRef.current = "lake";
-    fitBoundsPad(map, bounds, 800);
-  }, [selectedLakeId, ready]);
+    applyCameraRequest(
+      map,
+      cameraOnSelection({
+        selectedId: selectedLakeId,
+        selectedBounds: bounds,
+        fittedLakeId: fittedLakeIdRef.current,
+        canvasReady: isMapCanvasReady(canvasEl.clientWidth, canvasEl.clientHeight),
+      }),
+      allShorelinesRef.current,
+      viewModeRef,
+      fittedLakeIdRef,
+      containerRef.current,
+    );
+  }, [selectedLakeId, ready, allShorelines]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2468,7 +2515,6 @@ export function MapView({
     const labels = map.getSource("lakes-label-points") as GeoJSONSource | undefined;
     const fill = map.getSource("lakes-all") as GeoJSONSource | undefined;
     let poll = 0;
-    let sawLoading = false;
 
     const finish = () => {
       if (lakesVectorReadyRef.current) return;
@@ -2480,35 +2526,40 @@ export function MapView({
       const lakeBounds = selected
         ? boundsByLakeRef.current.get(selected)
         : undefined;
-      if (
-        lakeBounds &&
-        fittedLakeIdRef.current !== selected &&
-        !userMovedRef.current
-      ) {
-        fittedLakeIdRef.current = selected;
-        viewModeRef.current = "lake";
-        fitBoundsPad(map, lakeBounds, 0);
-      } else if (!userMovedRef.current && viewModeRef.current === "all") {
-        fitFeatureCollection(map, allShorelines, 0);
-      }
+      const canvasEl = map.getCanvas();
+      applyCameraRequest(
+        map,
+        cameraOnShorelinesReady({
+          selectedId: selected,
+          selectedBounds: lakeBounds,
+          fittedLakeId: fittedLakeIdRef.current,
+          userMoved: userMovedRef.current,
+          viewMode: viewModeRef.current,
+          canvasReady: isMapCanvasReady(
+            canvasEl.clientWidth,
+            canvasEl.clientHeight,
+          ),
+        }),
+        allShorelines,
+        viewModeRef,
+        fittedLakeIdRef,
+        containerRef.current,
+      );
     };
     const onSource = (e: { sourceId?: string; isSourceLoaded?: boolean }) => {
       if (e.sourceId !== "lakes-all-outlines") return;
-      if (!e.isSourceLoaded) {
-        sawLoading = true;
-        return;
-      }
-      if (sawLoading) finish();
+      if (lakeVectorSourceReady(!!e.isSourceLoaded)) finish();
     };
     map.on("sourcedata", onSource);
     outlines?.setData(lakeOutlineGeoJSON(allShorelines));
     labels?.setData(lakeLabelGeoJSON(allShorelines));
+    if (lakeVectorSourceReady(map.isSourceLoaded("lakes-all-outlines"))) {
+      finish();
+    }
     poll = window.setInterval(() => {
-      if (!map.isSourceLoaded("lakes-all-outlines")) {
-        sawLoading = true;
-        return;
+      if (lakeVectorSourceReady(map.isSourceLoaded("lakes-all-outlines"))) {
+        finish();
       }
-      if (sawLoading) finish();
     }, 100);
     return () => {
       map.off("sourcedata", onSource);
@@ -2526,10 +2577,32 @@ export function MapView({
         map,
         allShorelinesRef.current,
         selectedLakeIdRef.current,
-        basemap === "satellite",
+        basemapRef.current === "satellite",
         forecastPointRef.current,
       );
+      const spec = resolveFetchRay(
+        hoverRef.current,
+        windRef.current?.windDirDeg ?? null,
+      );
+      let ray: GeoJSON.FeatureCollection | null = null;
+      if (spec) {
+        const g = gridsRef.current;
+        const shore = shorelineRef.current;
+        if (g && shore) {
+          ray = fetchRayGeoJSON(
+            g,
+            shore,
+            spec.lon,
+            spec.lat,
+            spec.windFromDeg,
+          );
+        }
+      }
+      drawFetchRay(canvas, map, ray, basemapRef.current === "satellite", {
+        clear: false,
+      });
     };
+    drawOutlinesRef.current = draw;
     draw();
     map.on("move", draw);
     map.on("resize", draw);
@@ -2543,37 +2616,40 @@ export function MapView({
   }, [ready, allShorelines, selectedLakeId, basemap, forecastPoint]);
 
   useEffect(() => {
+    drawOutlinesRef.current();
+  }, [hover]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const canvas = stationOverlayCanvasRef.current;
+    if (!map || !ready || !canvas) return;
+    const draw = () => {
+      drawStations(
+        canvas,
+        map,
+        stationsOnRef.current ? stationsRef.current : null,
+        basemapRef.current === "satellite",
+        selectedStationIdRef.current,
+        windUnitRef.current,
+      );
+    };
+    draw();
+    map.on("move", draw);
+    map.on("resize", draw);
+    const ro = new ResizeObserver(draw);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => {
+      map.off("move", draw);
+      map.off("resize", draw);
+      ro.disconnect();
+    };
+  }, [ready, stationsOn, stations, selectedStationId, basemap, units.wind]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     applyBasemap(map, basemap, selectedLakeId);
   }, [basemap, ready, selectedLakeId]);
-
-  // Draw upwind fetch ray from hover point to shoreline
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-    const src = map.getSource("fetch-ray") as GeoJSONSource | undefined;
-    if (!src) return;
-    if (!hover || hover.windDirDeg == null || hover.fetchM == null || hover.fetchM <= 0) {
-      src.setData(EMPTY_FC);
-      return;
-    }
-    const g = gridsRef.current;
-    const shore = shorelineRef.current;
-    if (!g || !shore) {
-      src.setData(EMPTY_FC);
-      return;
-    }
-    src.setData(
-      fetchRayGeoJSON(
-        g,
-        shore,
-        hover.lon,
-        hover.lat,
-        hover.windDirDeg,
-      ),
-    );
-  }, [hover, ready]);
 
   useEffect(() => {
     const canvas = hsCanvasRef.current;
@@ -3032,7 +3108,7 @@ export function MapView({
         "Radar colors are ECCC precip rate (rain mm/h, snow cm/h).",
         "Wind arrows follow the nearest hourly GEM field.",
         stationsOn
-          ? "Circles are MSC / NAV CANADA surface stations (SWOB)."
+          ? "Diamonds are MSC / NAV CANADA surface stations (SWOB)."
           : null,
       ].filter((line): line is string => !!line);
     }
@@ -3073,7 +3149,7 @@ export function MapView({
           ? null
           : "Click the lake to pin a forecast spot.";
     const stationNote = stationsOn
-      ? "Circles are MSC / NAV CANADA surface stations (SWOB). Click for the latest observation."
+      ? "Diamonds are MSC / NAV CANADA stations with an observation from this hour. Hidden unless the slider is on Now."
       : null;
     return [source, hint, stationNote].filter((line): line is string => !!line);
   }, [
@@ -3115,7 +3191,7 @@ export function MapView({
 
   return (
     <div className="map-wrap">
-      <div ref={containerRef} className="map" />
+      <div ref={containerRef} className="map" data-map-view="all" />
       <canvas
         ref={windParticleCanvasRef}
         className={
@@ -3137,6 +3213,11 @@ export function MapView({
       <canvas
         ref={lakeOutlineCanvasRef}
         className="lake-outlines"
+        aria-hidden="true"
+      />
+      <canvas
+        ref={stationOverlayCanvasRef}
+        className="wx-stations-overlay"
         aria-hidden="true"
       />
       {heatmapLoading ? (

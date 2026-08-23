@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Topbar } from "./components/Topbar";
-import { MapView, type OverlayId, type BasemapId, type WindGlyphId, loadBasemap, saveBasemap, loadWindGlyph, saveWindGlyph, loadOverlay, saveOverlay } from "./components/MapView";
+import { MapView, type OverlayId, type BasemapId, type WindGlyphId, loadBasemap, saveBasemap, loadWindGlyph, saveWindGlyph, saveOverlay } from "./components/MapView";
 import { WindChart } from "./components/WindChart";
 import { TempChart, hasTempHours } from "./components/TempChart";
 import { WaveChart, type ForecastPoint } from "./components/WaveChart";
@@ -63,7 +63,6 @@ import {
 import { formatSelectedWhen, sliderInsetStyle } from "./lib/forecastChart";
 import {
   fetchRadarWindows,
-  loadRadar,
   RADAR_POLL_MS,
   radarTimeline,
   saveRadar,
@@ -71,7 +70,7 @@ import {
 } from "./lib/radar";
 import {
   fetchStations,
-  loadStationsOn,
+  filterCurrentHourStations,
   saveStationsOn,
   STATIONS_POLL_MS,
   type StationsResponse,
@@ -245,12 +244,8 @@ export default function App() {
   >("idle");
   const [reviewFollow, setReviewFollow] = useState(loadReviewFollow);
   const [bottomCollapsed, setBottomCollapsed] = useState(loadBottomCollapsed);
-  const [radarOn, setRadarOn] = useState(() =>
-    typeof window !== "undefined" ? loadRadar() : false,
-  );
-  const [stationsOn, setStationsOn] = useState(() =>
-    typeof window !== "undefined" ? loadStationsOn() : false,
-  );
+  const [radarOn, setRadarOn] = useState(false);
+  const [stationsOn, setStationsOn] = useState(false);
   const [stations, setStations] = useState<StationsResponse | null>(null);
   const [radarWindows, setRadarWindows] = useState<RadarWindows | null>(null);
   const [radarSelectedIso, setRadarSelectedIso] = useState<string | null>(null);
@@ -261,9 +256,7 @@ export default function App() {
   const [windGlyph, setWindGlyph] = useState<WindGlyphId>(() =>
     typeof window !== "undefined" ? loadWindGlyph() : "particles",
   );
-  const [overlay, setOverlay] = useState<OverlayId>(() =>
-    typeof window !== "undefined" ? loadOverlay() : "wind",
-  );
+  const [overlay, setOverlay] = useState<OverlayId>("wind");
   const pendingSessionRef = useRef<GpxTrack | null>(null);
   const gpxInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -675,6 +668,15 @@ export default function App() {
     return i >= 0 ? i : radarClock.liveIndex;
   }, [radarFollowLive, radarSelectedIso, radarClock]);
   const radarTimeIso = radarClock.times[radarIndex] ?? null;
+  const stationsAtNow =
+    mode !== "history" &&
+    mode !== "review" &&
+    mode !== "sim" &&
+    (radarOn ? radarFollowLive : chartIndex === chartNowIndex);
+  const liveStations = useMemo(
+    () => filterCurrentHourStations(stations),
+    [stations],
+  );
 
   const selectRadarIndex = useCallback(
     (index: number) => {
@@ -1264,8 +1266,8 @@ export default function App() {
             radarFollowLive={radarOn && radarFollowLive}
             radarOn={radarOn}
             radarWindows={radarWindows}
-            stationsOn={stationsOn}
-            stations={stations}
+            stationsOn={stationsOn && stationsAtNow}
+            stations={liveStations}
             forecastPoint={forecastPoint}
             gpxTrack={mode === "review" ? gpxTrack : null}
             gpxCursor={
@@ -1589,7 +1591,7 @@ export default function App() {
               type="button"
               className={`overlay-nav-stations${stationsOn ? " is-on" : ""}`}
               aria-pressed={stationsOn}
-              title="Show MSC and NAV CANADA weather stations"
+              title="Show MSC, NAV CANADA, and Pigeon Lake buoy stations"
               onClick={() => {
                 setStationsOn((on) => {
                   const next = !on;

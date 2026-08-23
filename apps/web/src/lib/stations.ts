@@ -60,6 +60,34 @@ export function saveStationsOn(on: boolean): void {
   }
 }
 
+export function utcHourStart(ms: number): number {
+  return Math.floor(ms / 3_600_000) * 3_600_000;
+}
+
+export function obsInCurrentHour(
+  iso: string | null | undefined,
+  nowMs = Date.now(),
+): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return false;
+  const start = utcHourStart(nowMs);
+  return t >= start && t < start + 3_600_000;
+}
+
+export function filterCurrentHourStations(
+  data: StationsResponse | null,
+  nowMs = Date.now(),
+): StationsResponse | null {
+  if (!data) return data;
+  return {
+    ...data,
+    features: data.features.filter((f) =>
+      obsInCurrentHour(f.properties.observedAt, nowMs),
+    ),
+  };
+}
+
 export async function fetchStations(): Promise<StationsResponse> {
   const res = await globalThis.fetch("/api/stations");
   if (!res.ok) throw new Error(`Stations ${res.status}`);
@@ -70,6 +98,7 @@ export function stationNetworkLabel(network: string, provider: string): string {
   if (network === "CA") return "MSC";
   if (network === "NC-AWOS") return "NAV CANADA AWOS";
   if (network === "NC-HWOS") return "NAV CANADA";
+  if (network === "PLWA" || provider === "PLWA") return "PLWA buoy";
   if (provider === "NAV CANADA") return "NAV CANADA";
   if (provider === "MSC") return "MSC";
   return provider || network || "Station";
