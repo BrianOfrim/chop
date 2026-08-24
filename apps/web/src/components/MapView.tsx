@@ -59,7 +59,6 @@ import {
   layoutWindArrows,
   prefersReducedWindMotion,
   stepWindParticles,
-  syncGlyphLiftCanvas,
   WIND_STREAK_COLOR,
 } from "../lib/windParticles";
 import {
@@ -77,6 +76,7 @@ import {
 } from "../lib/units";
 import { DEFAULT_DEPTH_SCALE, DEFAULT_TEMP_SCALE, DEFAULT_WAVE_SCALE, DEFAULT_WIND_SCALE, sampleRgb, scaleGradientCss, type ColorScaleId } from "../lib/colorScales";
 import type { GpxTrack } from "../lib/gpx";
+import { drawReviewPath } from "../lib/reviewPath";
 import {
   type StationFeature,
   type StationsResponse,
@@ -616,13 +616,28 @@ function removeRadarLayers(map: MapLibreMap): void {
   radarLoadGen += 1;
 }
 
-/** MapLibre canvas sources skip prepare() until a covering tile exists; poke after paint. */
+/**
+ * One-shot texture refresh for a paused (animate: false) canvas source.
+ * pause() runs prepare() while _playing is still true, which uploads the
+ * current canvas into the GL texture immediately; the repaint then draws the
+ * fresh frame. Keeping the source paused stops the per-frame texture
+ * re-upload + continuous repaint loop that animate: true causes. If no
+ * covering tile exists yet (first display), prepare() is a no-op here and the
+ * texture is instead created from the canvas on the next painted frame.
+ */
+function refreshCanvasSource(map: MapLibreMap, id: string): void {
+  const src = map.getSource(id) as CanvasSource | undefined;
+  if (!src) return;
+  src.play?.();
+  src.pause?.();
+  map.triggerRepaint();
+}
+
 function publishWindFieldSource(map: MapLibreMap): void {
   const src = map.getSource("wind-field") as CanvasSource | undefined;
   if (!src) return;
-  src.play?.();
   src.setCoordinates(windCanvasCoordinates());
-  map.triggerRepaint();
+  refreshCanvasSource(map, "wind-field");
 }
 
 const BASEMAP_LAYER_IDS = [
@@ -1458,6 +1473,7 @@ export function MapView({
   const windParticleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windGlyphLiftCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lakeOutlineCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const reviewPathCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawOutlinesRef = useRef<() => void>(() => {});
   const stationOverlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const windParticlesRef = useRef(createParticleField());
@@ -1492,6 +1508,14 @@ export function MapView({
   selectedLakeIdRef.current = selectedLakeId;
   const forecastPointRef = useRef(forecastPoint);
   forecastPointRef.current = forecastPoint;
+  const gpxTrackRef = useRef(gpxTrack);
+  gpxTrackRef.current = gpxTrack;
+  const gpxCursorRef = useRef(gpxCursor);
+  gpxCursorRef.current = gpxCursor;
+  const gpxWindTicksRef = useRef(gpxWindTicks);
+  gpxWindTicksRef.current = gpxWindTicks;
+  const gpxWindTickIndexRef = useRef(gpxWindTickIndex);
+  gpxWindTickIndexRef.current = gpxWindTickIndex;
   const stationsRef = useRef(stations);
   stationsRef.current = stations;
   const windUnitRef = useRef(units.wind);
@@ -1779,11 +1803,14 @@ export function MapView({
         canvas.height = 1;
       }
       hsCanvasRef.current = canvas;
+      // animate: false — the canvas only changes when a forecast slice is
+      // repainted; refreshCanvasSource() uploads the texture on demand instead
+      // of MapLibre re-uploading the full canvas every rendered frame.
       map.addSource("hs", {
         type: "canvas",
         canvas,
         coordinates: meta ? hsCoordinates(meta) : windCanvasCoordinates(),
-        animate: true,
+        animate: false,
       });
       map.addLayer({
         id: "hs-layer",
@@ -1807,7 +1834,7 @@ export function MapView({
         type: "canvas",
         canvas: windCanvas,
         coordinates: windCanvasCoordinates(),
-        animate: true,
+        animate: false,
       });
       map.addLayer({
         id: "wind-field",
@@ -1999,6 +2026,7 @@ export function MapView({
         source: "gpx-track",
         filter: ["in", ["get", "kind"], ["literal", ["track", "route"]]],
         layout: {
+          visibility: "none",
           "line-cap": "round",
           "line-join": "round",
         },
@@ -2014,6 +2042,7 @@ export function MapView({
         source: "gpx-track",
         filter: ["in", ["get", "kind"], ["literal", ["track", "route"]]],
         layout: {
+          visibility: "none",
           "line-cap": "round",
           "line-join": "round",
         },
@@ -2028,6 +2057,7 @@ export function MapView({
         type: "circle",
         source: "gpx-track",
         filter: ["in", ["get", "kind"], ["literal", ["start", "end"]]],
+        layout: { visibility: "none" },
         paint: {
           "circle-radius": [
             "match",
@@ -2055,6 +2085,7 @@ export function MapView({
         source: "gpx-wind-perp",
         filter: ["==", ["get", "kind"], "perp"],
         layout: {
+          visibility: "none",
           "line-cap": "butt",
           "line-join": "round",
         },
@@ -2071,6 +2102,7 @@ export function MapView({
         source: "gpx-wind-perp",
         filter: ["==", ["get", "kind"], "perp-active"],
         layout: {
+          visibility: "none",
           "line-cap": "butt",
           "line-join": "round",
         },
@@ -2087,6 +2119,7 @@ export function MapView({
         id: "gpx-cursor-halo",
         type: "circle",
         source: "gpx-cursor",
+        layout: { visibility: "none" },
         paint: {
           "circle-radius": 10,
           "circle-color": "#f8f6f0",
@@ -2099,6 +2132,7 @@ export function MapView({
         id: "gpx-cursor-dot",
         type: "circle",
         source: "gpx-cursor",
+        layout: { visibility: "none" },
         paint: {
           "circle-radius": 4.5,
           "circle-color": "#c45c1a",
@@ -2112,6 +2146,7 @@ export function MapView({
         source: "gpx-travel",
         filter: ["==", ["get", "kind"], "travel-shaft"],
         layout: {
+          visibility: "none",
           "line-cap": "round",
           "line-join": "round",
         },
@@ -2127,6 +2162,7 @@ export function MapView({
         source: "gpx-travel",
         filter: ["==", ["get", "kind"], "travel-head"],
         layout: {
+          visibility: "none",
           "icon-image": "wind-arrow",
           "icon-size": 0.22,
           "icon-rotate": ["get", "bearing"],
@@ -2473,6 +2509,7 @@ export function MapView({
       }
       const hsSrc = map.getSource("hs") as CanvasSource | undefined;
       hsSrc?.setCoordinates(hsCoordinates(meta));
+      refreshCanvasSource(map, "hs");
     } else {
       shoreSrc?.setData(EMPTY_FC);
     }
@@ -2647,53 +2684,85 @@ export function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
+    const canvas = reviewPathCanvasRef.current;
+    if (!map || !ready || !canvas) return;
+    const draw = () => {
+      drawReviewPath(
+        canvas,
+        map,
+        gpxTrackRef.current,
+        gpxCursorRef.current,
+        gpxWindTicksRef.current,
+        gpxWindTickIndexRef.current,
+      );
+    };
+    draw();
+    map.on("move", draw);
+    map.on("resize", draw);
+    const ro = new ResizeObserver(draw);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => {
+      map.off("move", draw);
+      map.off("resize", draw);
+      ro.disconnect();
+    };
+  }, [ready, gpxTrack, gpxCursor, gpxWindTicks, gpxWindTickIndex]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !ready) return;
     applyBasemap(map, basemap, selectedLakeId);
   }, [basemap, ready, selectedLakeId]);
 
   useEffect(() => {
+    const map = mapRef.current;
     const canvas = hsCanvasRef.current;
     const shore = shorelineRef.current;
-    if (!ready || !canvas || !grids || !spot || !shore) return;
+    if (!ready || !map || !canvas || !grids || !spot || !shore) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const size = hsCanvasSize(grids.meta);
-    if (canvas.width !== size.width || canvas.height !== size.height) {
-      canvas.width = size.width;
-      canvas.height = size.height;
-    }
-    if (spot.spotId !== selectedLakeId || showsFieldHeatmap(overlay, radarOn)) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      return;
-    }
-    if (radarOn || (overlay !== "waves" && overlay !== "depth")) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      return;
-    }
-    let mask = shoreMaskRef.current;
-    if (!mask || mask.width !== size.width || mask.height !== size.height) {
-      mask = buildShoreMaskCanvas(grids.meta, shore);
-      shoreMaskRef.current = mask;
-    }
-    if (overlay === "depth") {
+    const paint = () => {
+      const size = hsCanvasSize(grids.meta);
+      if (canvas.width !== size.width || canvas.height !== size.height) {
+        canvas.width = size.width;
+        canvas.height = size.height;
+      }
+      if (spot.spotId !== selectedLakeId || showsFieldHeatmap(overlay, radarOn)) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+      if (radarOn || (overlay !== "waves" && overlay !== "depth")) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+      let mask = shoreMaskRef.current;
+      if (!mask || mask.width !== size.width || mask.height !== size.height) {
+        mask = buildShoreMaskCanvas(grids.meta, shore);
+        shoreMaskRef.current = mask;
+      }
+      if (overlay === "depth") {
+        paintHsClipped(
+          ctx,
+          depthToImageData(grids.depth, grids.meta, depthMaxM, DEFAULT_DEPTH_SCALE),
+          mask,
+          heatmapStyle === "blend",
+        );
+        return;
+      }
+      if (!hs) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
       paintHsClipped(
         ctx,
-        depthToImageData(grids.depth, grids.meta, depthMaxM, DEFAULT_DEPTH_SCALE),
+        hsToImageData(hs, grids.meta, vmax, DEFAULT_WAVE_SCALE),
         mask,
         heatmapStyle === "blend",
       );
-      return;
-    }
-    if (!hs) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      return;
-    }
-    paintHsClipped(
-      ctx,
-      hsToImageData(hs, grids.meta, vmax, DEFAULT_WAVE_SCALE),
-      mask,
-      heatmapStyle === "blend",
-    );
+    };
+    paint();
+    // Source is paused (animate: false); publish the repainted canvas once.
+    refreshCanvasSource(map, "hs");
   }, [hs, overlay, ready, grids, vmax, depthMaxM, spot?.spotId, selectedLakeId, heatmapStyle, radarOn]);
 
   useEffect(() => {
@@ -2795,6 +2864,7 @@ export function MapView({
         : (tempSliceRef.current ?? null);
       if (!showWindHeat && !showTempHeat && !showGlyphs) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        refreshCanvasSource(map, "wind-field");
         const src = map.getSource("wind-arrows") as GeoJSONSource | undefined;
         src?.setData(EMPTY_FC);
         setFieldHeatmapReady(true);
@@ -2812,7 +2882,7 @@ export function MapView({
         markPainted();
       } else {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        map.triggerRepaint();
+        refreshCanvasSource(map, "wind-field");
         setFieldHeatmapReady(true);
       }
       applyArrows();
@@ -2840,10 +2910,12 @@ export function MapView({
     const canvas = windParticleCanvasRef.current;
     const lift = windGlyphLiftCanvasRef.current;
     if (!map || !ready || !canvas) return;
-    const syncLift = () => syncGlyphLiftCanvas(canvas, lift);
-    if (!showsWindGlyphs(overlay, radarOn) || windGlyph !== "particles") {
+    const clearGlyphs = () => {
       clearParticleCanvas(canvas);
-      syncLift();
+      clearParticleCanvas(lift);
+    };
+    if (!showsWindGlyphs(overlay, radarOn) || windGlyph !== "particles") {
+      clearGlyphs();
       windParticlesRef.current = createParticleField();
       return;
     }
@@ -2855,8 +2927,7 @@ export function MapView({
     let lastZoom = map.getZoom();
     const onMoveStart = () => {
       moving = true;
-      clearParticleCanvas(canvas);
-      syncLift();
+      clearGlyphs();
     };
     const onMoveEnd = () => {
       moving = false;
@@ -2877,17 +2948,19 @@ export function MapView({
         simulatingRef.current,
       );
       if (slice && !moving) {
-        stepWindParticles(canvas, map, slice, windParticlesRef.current, dt, {
-          fade: true,
-          viewChanged,
-          zoomChanged,
-        });
-        syncLift();
+        stepWindParticles(
+          canvas,
+          map,
+          slice,
+          windParticlesRef.current,
+          dt,
+          { fade: true, viewChanged, zoomChanged },
+          lift,
+        );
         viewChanged = false;
         zoomChanged = false;
       } else if (!slice) {
-        clearParticleCanvas(canvas);
-        syncLift();
+        clearGlyphs();
         windParticlesRef.current = createParticleField();
         viewChanged = true;
         zoomChanged = true;
@@ -2903,8 +2976,7 @@ export function MapView({
       map.off("movestart", onMoveStart);
       map.off("moveend", onMoveEnd);
       map.off("zoomend", onZoomEnd);
-      clearParticleCanvas(canvas);
-      syncLift();
+      clearGlyphs();
     };
   }, [overlay, ready, windGlyph, radarOn]);
 
@@ -2913,7 +2985,10 @@ export function MapView({
     const canvas = windParticleCanvasRef.current;
     const lift = windGlyphLiftCanvasRef.current;
     if (!map || !ready || !canvas) return;
-    const syncLift = () => syncGlyphLiftCanvas(canvas, lift);
+    const clearGlyphs = () => {
+      clearParticleCanvas(canvas);
+      clearParticleCanvas(lift);
+    };
     if (!showsWindGlyphs(overlay, radarOn) || windGlyph !== "arrows") {
       arrowLayoutRef.current = null;
       return;
@@ -2925,8 +3000,7 @@ export function MapView({
       );
       if (!slice) {
         arrowLayoutRef.current = null;
-        clearParticleCanvas(canvas);
-        syncLift();
+        clearGlyphs();
         return;
       }
       arrowLayoutRef.current = layoutWindArrows(slice, zoom);
@@ -2934,12 +3008,10 @@ export function MapView({
     const paint = () => {
       const fc = arrowLayoutRef.current;
       if (!fc) {
-        clearParticleCanvas(canvas);
-        syncLift();
+        clearGlyphs();
         return;
       }
-      drawWindArrows(canvas, map, fc);
-      syncLift();
+      drawWindArrows(canvas, map, fc, lift);
     };
     const onZoomEnd = () => {
       layoutAtZoom(map.getZoom());
@@ -3213,6 +3285,11 @@ export function MapView({
       <canvas
         ref={lakeOutlineCanvasRef}
         className="lake-outlines"
+        aria-hidden="true"
+      />
+      <canvas
+        ref={reviewPathCanvasRef}
+        className="review-path"
         aria-hidden="true"
       />
       <canvas

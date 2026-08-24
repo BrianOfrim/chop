@@ -2,7 +2,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import { sampleWindField, type WindFieldSlice } from "./windField";
 import { pointInAlberta, windArrowsGeoJSON } from "./windOverlay";
 
-type TrailPt = { lon: number; lat: number };
+type TrailPt = { x: number; y: number };
 
 type Particle = {
   lon: number;
@@ -15,14 +15,17 @@ type Particle = {
   dying: boolean;
 };
 
-/** Keep this many past positions so the tail stays comet-long. */
-const TRAIL_LEN = 72;
+/** Short screen-space streak. One polyline per particle (not a per-segment
+ *  comet), so stroke count stays ~particles×canvases, not ×trail length. */
+const TRAIL_LEN = 44;
 /** Screen pixels per second at 1 m/s local wind. */
 const PX_PER_SEC_PER_MPS = 5.6;
 const VIEW_PAD_PX = 48;
 const SPAWN_TRIES = 48;
 const OCCUPANCY_CELL_PX = 26;
-const HEAD_R = 1.15;
+const LINE_W = 4.6;
+/** Newborn particles (no trail yet) get a soft tip the size of the stroke cap. */
+const HEAD_HALO = LINE_W * 0.55;
 export const WIND_STREAK_RGB = "168,172,176";
 export const WIND_STREAK_COLOR = `rgb(${WIND_STREAK_RGB})`;
 /** White so CSS mix-blend-mode: difference inverts the map under each streak. */
@@ -38,7 +41,7 @@ export function prefersReducedWindMotion(): boolean {
 
 export function particleCountForView(width: number, height: number): number {
   return Math.round(
-    Math.min(900, Math.max(220, (width * height) / 3200)),
+    0.8 * Math.min(900, Math.max(220, (width * height) / 3200)),
   );
 }
 
@@ -50,7 +53,10 @@ export function syncParticleCanvas(
   const width = host.clientWidth;
   const height = host.clientHeight;
   if (width < 8 || height < 8) return null;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  // 1x backing store: glyphs are soft anti-aliased streaks, and these
+  // full-screen canvases change every frame — retina resolution quadruples
+  // the rasterize/upload/composite cost for no visible gain.
+  const dpr = 1;
   const tw = Math.round(width * dpr);
   const th = Math.round(height * dpr);
   if (canvas.width !== tw || canvas.height !== th) {
@@ -71,34 +77,12 @@ export function clearParticleCanvas(canvas: HTMLCanvasElement | null): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-/** 1:1 backing-store copy for the white lift overlay above the invert canvas. */
-export function copyParticleCanvas(
-  source: HTMLCanvasElement,
-  dest: HTMLCanvasElement,
-): void {
-  if (dest.width !== source.width || dest.height !== source.height) {
-    dest.width = source.width;
-    dest.height = source.height;
-  }
-  const ctx = dest.getContext("2d");
-  if (!ctx) return;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, dest.width, dest.height);
-  if (source.width < 1 || source.height < 1) return;
-  ctx.drawImage(source, 0, 0);
-}
-
-export function syncGlyphLiftCanvas(
-  source: HTMLCanvasElement | null,
-  lift: HTMLCanvasElement | null,
-): void {
-  if (!lift) return;
-  if (!source) {
-    clearParticleCanvas(lift);
-    return;
-  }
-  copyParticleCanvas(source, lift);
-}
+/*
+ * The invert and lift canvases show identical strokes under different CSS
+ * (mix-blend-mode: difference vs 50% white opacity). Glyphs are stroked into
+ * both contexts directly — drawing twice is far cheaper than the previous
+ * per-frame full-screen drawImage copy between the two canvases.
+ */
 
 function makeParticle(lon: number, lat: number): Particle {
   return {
@@ -106,7 +90,7 @@ function makeParticle(lon: number, lat: number): Particle {
     lat,
     age: Math.random() * 1.2,
     maxAge: 4.2 + Math.random() * 5.5,
-    trail: [{ lon, lat }],
+    trail: [],
     fade: 1,
     dying: false,
   };
@@ -155,63 +139,59 @@ export function createParticleField(): Particle[] {
   return [];
 }
 
-function drawComet(
-  ctx: CanvasRenderingContext2D,
-  map: MapLibreMap,
+function drawStreak(
+  ctxs: readonly CanvasRenderingContext2D[],
   trail: TrailPt[],
   opacity: number,
 ): void {
-  if (opacity <= 0.01) return;
-  if (trail.length < 2) {
-    const p = trail[0];
-    if (!p) return;
-    const s = map.project([p.lon, p.lat]);
-    drawHead(ctx, s.x, s.y, opacity);
-    return;
+  if (opacity <= 0.01 || trail.length === 0) return;
+  const first = trail[0]!;
+  const last = trail[trail.length - 1]!;
+  const headA = 0.68 * opacity;
+  const dx = last.x - first.x;
+  const dy = last.y - first.y;
+  const canFade = dx * dx + dy * dy > 4;
+  for (const ctx of ctxs) {
+    if (trail.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < trail.length; i++) {
+        ctx.lineTo(trail[i]!.x, trail[i]!.y);
+      }
+      // Linear fade along the chord (trails stay nearly straight). One
+      // stroke still — no per-segment comet draws. The bright round cap
+      // is the head, so it is the same shape as the tail.
+      if (canFade) {
+        const fade = ctx.createLinearGradient(first.x, first.y, last.x, last.y);
+        fade.addColorStop(0, `rgba(${PARTICLE_RGB},0)`);
+        fade.addColorStop(0.28, `rgba(${PARTICLE_RGB},${0.22 * opacity})`);
+        fade.addColorStop(0.72, `rgba(${PARTICLE_RGB},${0.5 * opacity})`);
+        fade.addColorStop(1, `rgba(${PARTICLE_RGB},${headA})`);
+        ctx.strokeStyle = fade;
+      } else {
+        ctx.strokeStyle = `rgba(${PARTICLE_RGB},${headA})`;
+      }
+      ctx.lineWidth = LINE_W;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    } else {
+      const glow = ctx.createRadialGradient(
+        last.x,
+        last.y,
+        0,
+        last.x,
+        last.y,
+        HEAD_HALO,
+      );
+      glow.addColorStop(0, `rgba(${PARTICLE_RGB},${headA})`);
+      glow.addColorStop(1, `rgba(${PARTICLE_RGB},0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, HEAD_HALO, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
-
-  const pts: Array<{ x: number; y: number }> = [];
-  for (let i = 0; i < trail.length; i++) {
-    const ll = trail[i]!;
-    pts.push(map.project([ll.lon, ll.lat]));
-  }
-
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  const last = pts.length - 1;
-  for (let i = 0; i < last; i++) {
-    const t = (i + 1) / last;
-    const fade = Math.pow(t, 0.7);
-    ctx.beginPath();
-    ctx.moveTo(pts[i]!.x, pts[i]!.y);
-    ctx.lineTo(pts[i + 1]!.x, pts[i + 1]!.y);
-    ctx.strokeStyle = `rgba(${PARTICLE_RGB},${(0.08 + 0.52 * fade) * opacity})`;
-    ctx.lineWidth = 0.21 + 1.33 * t;
-    ctx.stroke();
-  }
-
-  const head = pts[last]!;
-  drawHead(ctx, head.x, head.y, opacity);
-}
-
-function drawHead(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  opacity: number,
-): void {
-  ctx.beginPath();
-  ctx.fillStyle = `rgba(${PARTICLE_RGB},${0.32 * opacity})`;
-  ctx.arc(x, y, HEAD_R * 2.05, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.fillStyle = `rgba(${PARTICLE_RGB},${0.7 * opacity})`;
-  ctx.arc(x, y, HEAD_R * 1.35, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.fillStyle = `rgba(${PARTICLE_RGB},${opacity})`;
-  ctx.arc(x, y, HEAD_R, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 function occupancySize(width: number, height: number): {
@@ -323,10 +303,16 @@ export function stepWindParticles(
   particles: Particle[],
   dt: number,
   opts: { fade: boolean; viewChanged?: boolean; zoomChanged?: boolean },
+  lift?: HTMLCanvasElement | null,
 ): boolean {
   const synced = syncParticleCanvas(canvas, map);
   if (!synced) return false;
   const { ctx, width, height } = synced;
+  const ctxs: CanvasRenderingContext2D[] = [ctx];
+  if (lift) {
+    const liftSynced = syncParticleCanvas(lift, map);
+    if (liftSynced) ctxs.push(liftSynced.ctx);
+  }
   const step = Math.min(0.05, Math.max(0, dt));
   const want = particleCountForView(width, height);
 
@@ -334,16 +320,32 @@ export function stepWindParticles(
     particles.length = 0;
   } else if (opts.viewChanged) {
     dropOffscreen(map, particles, width, height);
+    for (const p of particles) p.trail = [];
   }
   fillEmptyCells(map, slice, particles, width, height, want);
-
-  ctx.clearRect(0, 0, width, height);
-  ctx.globalCompositeOperation = "source-over";
-
   let living = 0;
+  for (const p of particles) {
+    if (!p.dying) living += 1;
+  }
+  if (living > want) {
+    for (let i = particles.length - 1; i >= 0 && living > want; i--) {
+      if (!particles[i]!.dying) {
+        particles.splice(i, 1);
+        living -= 1;
+      }
+    }
+  }
+
+  for (const c of ctxs) {
+    c.clearRect(0, 0, width, height);
+    c.globalCompositeOperation = "source-over";
+    c.lineCap = "round";
+    c.lineJoin = "round";
+  }
+
   for (let i = 0; i < particles.length; i++) {
     const p = particles[i]!;
-    if (!p.trail) p.trail = [{ lon: p.lon, lat: p.lat }];
+    if (!p.trail) p.trail = [];
     if (p.fade == null) p.fade = 1;
     p.age += step;
     const sample = sampleWindField(slice, p.lon, p.lat);
@@ -362,26 +364,26 @@ export function stepWindParticles(
         i -= 1;
         continue;
       }
-    } else {
-      living += 1;
     }
+    let x1 = screen.x;
+    let y1 = screen.y;
     if (sample) {
       const speed = Number.isFinite(sample.speedMps)
         ? Math.max(0, sample.speedMps)
         : 0;
       const toRad = ((sample.dirDeg + 180) * Math.PI) / 180;
       const pxPerSec = speed * PX_PER_SEC_PER_MPS;
-      const x1 = screen.x + Math.sin(toRad) * pxPerSec * step;
-      const y1 = screen.y - Math.cos(toRad) * pxPerSec * step;
+      x1 = screen.x + Math.sin(toRad) * pxPerSec * step;
+      y1 = screen.y - Math.cos(toRad) * pxPerSec * step;
       const ll = map.unproject([x1, y1]);
       p.lon = ll.lng;
       p.lat = ll.lat;
-      p.trail.push({ lon: p.lon, lat: p.lat });
-      if (p.trail.length > TRAIL_LEN) {
-        p.trail.splice(0, p.trail.length - TRAIL_LEN);
-      }
     }
-    drawComet(ctx, map, p.trail, Math.max(0, p.fade));
+    p.trail.push({ x: x1, y: y1 });
+    if (p.trail.length > TRAIL_LEN) {
+      p.trail.splice(0, p.trail.length - TRAIL_LEN);
+    }
+    drawStreak(ctxs, p.trail, Math.max(0, p.fade));
   }
 
   return true;
@@ -400,16 +402,24 @@ export function drawWindArrows(
   canvas: HTMLCanvasElement,
   map: MapLibreMap,
   fc: GeoJSON.FeatureCollection,
+  lift?: HTMLCanvasElement | null,
 ): void {
   const synced = syncParticleCanvas(canvas, map);
   if (!synced) return;
   const { ctx, width, height } = synced;
-  ctx.clearRect(0, 0, width, height);
-  // White + CSS mix-blend-mode: difference → RGB invert of the map under each shaft.
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 1.7;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
+  const ctxs: CanvasRenderingContext2D[] = [ctx];
+  if (lift) {
+    const liftSynced = syncParticleCanvas(lift, map);
+    if (liftSynced) ctxs.push(liftSynced.ctx);
+  }
+  for (const c of ctxs) {
+    c.clearRect(0, 0, width, height);
+    // White + CSS mix-blend-mode: difference → RGB invert of the map under each shaft.
+    c.strokeStyle = "#fff";
+    c.lineWidth = 1.7;
+    c.lineCap = "round";
+    c.lineJoin = "round";
+  }
   for (const f of fc.features) {
     const g = f.geometry;
     if (!g) continue;
@@ -421,21 +431,22 @@ export function drawWindArrows(
           : [];
     for (const line of lines) {
       if (line.length < 2) continue;
-      ctx.beginPath();
-      let started = false;
+      const pts: Array<{ x: number; y: number }> = [];
       for (const pos of line) {
         const lon = pos[0];
         const lat = pos[1];
         if (lon == null || lat == null) continue;
-        const p = map.project([lon, lat]);
-        if (!started) {
-          ctx.moveTo(p.x, p.y);
-          started = true;
-        } else {
-          ctx.lineTo(p.x, p.y);
-        }
+        pts.push(map.project([lon, lat]));
       }
-      if (started) ctx.stroke();
+      if (pts.length < 2) continue;
+      for (const c of ctxs) {
+        c.beginPath();
+        c.moveTo(pts[0]!.x, pts[0]!.y);
+        for (let i = 1; i < pts.length; i++) {
+          c.lineTo(pts[i]!.x, pts[i]!.y);
+        }
+        c.stroke();
+      }
     }
   }
 }
