@@ -34,6 +34,32 @@ export function buildTimeAxis(n: number): TimeAxis {
   };
 }
 
+/** Chart x for a wall-clock time, interpolated along a sample series. */
+export function xAtTimeMs(
+  timeMs: number,
+  times: ReadonlyArray<{ timeMs: number }>,
+  xAtIndex: (i: number) => number,
+): number {
+  const n = times.length;
+  if (n === 0) return CHART_PAD.left;
+  if (n === 1 || timeMs <= times[0]!.timeMs) return xAtIndex(0);
+  const last = n - 1;
+  if (timeMs >= times[last]!.timeMs) return xAtIndex(last);
+  let lo = 0;
+  let hi = last;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid]!.timeMs <= timeMs) lo = mid;
+    else hi = mid;
+  }
+  const t0 = times[lo]!.timeMs;
+  const t1 = times[hi]!.timeMs;
+  const x0 = xAtIndex(lo);
+  const x1 = xAtIndex(hi);
+  if (t1 === t0) return x0;
+  return x0 + ((timeMs - t0) / (t1 - t0)) * (x1 - x0);
+}
+
 /** CSS padding so a full-width slider thumb tracks hour bar centers. */
 export function sliderInsetStyle(n: number): {
   paddingLeft: string;

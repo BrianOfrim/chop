@@ -9,11 +9,15 @@ import {
 } from "../lib/units";
 import type { SessionSample } from "../lib/sessionTrack";
 
+type FoilBand = { startMs: number; endMs: number };
+
 type Props = {
   samples: SessionSample[];
   sampleIndex: number;
   onSelectSample: (index: number) => void;
   windUnit: WindSpeedUnit;
+  foilBands?: FoilBand[];
+  takeoffMps?: number | null;
 };
 
 const W = CHART_W;
@@ -25,6 +29,8 @@ export function SessionSpeedChart({
   sampleIndex,
   onSelectSample,
   windUnit,
+  foilBands = [],
+  takeoffMps = null,
 }: Props) {
   const chart = useMemo(() => {
     if (samples.length === 0) return null;
@@ -36,6 +42,7 @@ export function SessionSpeedChart({
     const peak = Math.max(
       ...vals.filter((v): v is number => v != null),
       mpsToWind(1, windUnit),
+      takeoffMps != null ? mpsToWind(takeoffMps, windUnit) : 0,
     );
     const yMax = niceWindMax(peak, windUnit);
     const innerH = H - PAD.top - PAD.bottom;
@@ -46,21 +53,39 @@ export function SessionSpeedChart({
     const baseline = PAD.top + innerH;
     const tickDigits = windUnit === "mps" ? 1 : 0;
 
-    const points = samples.map((s, i) => {
-      const v = vals[i];
+    const onFoil = samples.map((s) =>
+      foilBands.some((b) => s.timeMs >= b.startMs && s.timeMs <= b.endMs),
+    );
+    const bands: Array<{ x: number; w: number }> = [];
+    let i = 0;
+    while (i < n) {
+      if (!onFoil[i]) {
+        i += 1;
+        continue;
+      }
+      const start = i;
+      while (i < n && onFoil[i]) i += 1;
+      const end = i - 1;
+      const x0 = xBar(start);
+      const x1 = xBar(end) + barW;
+      bands.push({ x: x0, w: Math.max(1, x1 - x0) });
+    }
+
+    const points = samples.map((_, idx) => {
+      const v = vals[idx];
       return {
-        i,
-        x: xCenter(i),
-        barX: xBar(i),
+        i: idx,
+        x: xCenter(idx),
+        barX: xBar(idx),
         y: v != null ? yAt(v) : null,
-        selected: i === sampleIndex,
+        selected: idx === sampleIndex,
         missing: v == null,
       };
     });
 
     const line = points
       .filter((p) => p.y != null)
-      .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y!.toFixed(1)}`)
+      .map((p, idx) => `${idx === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y!.toFixed(1)}`)
       .join(" ");
     const drawn = points.filter((p) => p.y != null);
     const area =
@@ -68,19 +93,26 @@ export function SessionSpeedChart({
         ? `${line} L${drawn[drawn.length - 1]!.x.toFixed(1)},${baseline} L${drawn[0]!.x.toFixed(1)},${baseline} Z`
         : "";
 
+    const takeoffY =
+      takeoffMps != null && Number.isFinite(takeoffMps)
+        ? yAt(mpsToWind(takeoffMps, windUnit))
+        : null;
+
     return {
       axis,
       points,
       barW,
       line,
       area,
+      bands,
+      takeoffY,
       ticks: [0, yMax / 2, yMax],
       yAt,
       baseline,
       innerH,
       tickDigits,
     };
-  }, [samples, sampleIndex, windUnit]);
+  }, [samples, sampleIndex, windUnit, foilBands, takeoffMps]);
 
   if (!chart) return null;
 
@@ -134,6 +166,25 @@ export function SessionSpeedChart({
             width={chart.barW + 1.2}
             height={chart.innerH}
             className="wind-chart-selection"
+          />
+        )}
+        {chart.bands.map((b, i) => (
+          <rect
+            key={`foil-${i}`}
+            x={b.x}
+            y={PAD.top}
+            width={b.w}
+            height={chart.innerH}
+            className="session-speed-foil-band"
+          />
+        ))}
+        {chart.takeoffY != null && (
+          <line
+            x1={PAD.left}
+            x2={W - PAD.right}
+            y1={chart.takeoffY}
+            y2={chart.takeoffY}
+            className="session-speed-threshold"
           />
         )}
         {chart.area && <path d={chart.area} className="session-speed-area" />}

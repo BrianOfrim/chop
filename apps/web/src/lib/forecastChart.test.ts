@@ -6,6 +6,7 @@ import {
   buildHourLabels,
   buildTimeAxis,
   sliderInsetStyle,
+  xAtTimeMs,
 } from "./forecastChart.ts";
 
 describe("buildHourLabels", () => {
@@ -42,6 +43,18 @@ describe("buildClockIntervalLabels", () => {
     assert.ok(labels[0]!.text.includes("15") || labels[0]!.text.includes("30"));
     assert.ok(labels[1]!.text.includes("30"));
     assert.ok(labels[0]!.x > 0 && labels[0]!.x < 40);
+  });
+});
+
+describe("xAtTimeMs", () => {
+  it("interpolates between sample times on the shared chart axis", () => {
+    const times = [{ timeMs: 0 }, { timeMs: 1000 }, { timeMs: 2000 }];
+    const axis = buildTimeAxis(times.length);
+    assert.equal(xAtTimeMs(0, times, axis.xCenter), axis.xCenter(0));
+    assert.equal(xAtTimeMs(2000, times, axis.xCenter), axis.xCenter(2));
+    const mid = xAtTimeMs(500, times, axis.xCenter);
+    const expected = (axis.xCenter(0) + axis.xCenter(1)) / 2;
+    assert.ok(Math.abs(mid - expected) < 1e-9);
   });
 });
 

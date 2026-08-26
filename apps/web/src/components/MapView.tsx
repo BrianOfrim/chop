@@ -76,12 +76,24 @@ import {
 } from "../lib/units";
 import { DEFAULT_DEPTH_SCALE, DEFAULT_TEMP_SCALE, DEFAULT_WAVE_SCALE, DEFAULT_WIND_SCALE, sampleRgb, scaleGradientCss, type ColorScaleId } from "../lib/colorScales";
 import type { GpxTrack } from "../lib/gpx";
-import { drawReviewPath } from "../lib/reviewPath";
+import {
+  drawReviewPath,
+  hitReviewFoilEvent,
+  hitReviewTrack,
+  reviewFocusRange,
+  reviewPolylinePoints,
+  TRACK_SPEED_MAX_MPS,
+  type ReviewCursor,
+  type ReviewFoilOverlay,
+  type ReviewTrackPoint,
+} from "../lib/reviewPath";
+import { sessionPointLabel } from "../lib/sessionTrack";
 import {
   type StationFeature,
   type StationsResponse,
   stationNetworkLabel,
 } from "../lib/stations";
+import { formatStationModelWindDelta } from "../lib/stationModelDelta";
 import {
   formatRadarLegend,
   formatRadarRate,
@@ -104,11 +116,13 @@ import {
 } from "../lib/tempField";
 import { TEMP_COLOR_MAX_C, TEMP_COLOR_MIN_C } from "../lib/tempScale";
 import {
+  applyFollowZoomAround,
   cameraOnBoot,
   cameraOnResize,
   cameraOnSelection,
   cameraOnShorelinesReady,
   isMapCanvasReady,
+  isReviewFollowBreakingGesture,
   lakeVectorSourceReady,
   type CameraRequest,
 } from "../lib/mapCamera";
@@ -226,13 +240,16 @@ type Props = {
   forecastPoint?: ForecastPoint | null;
   gpxTrack?: GpxTrack | null;
   /** Moving cursor along an uploaded track (session scrubber). */
-  gpxCursor?: { lon: number; lat: number; headingDeg?: number | null } | null;
+  gpxCursor?: ReviewCursor | null;
   /** Session points with HRDPS FROM direction, for perpendicular wind ticks. */
   gpxWindTicks?: Array<{ lon: number; lat: number; windDirDeg: number }> | null;
   gpxWindTickIndex?: number | null;
   /** Keep the selected GPX/session point centered while scrubbing. */
   followCursor?: boolean;
   onFollowCursorChange?: (on: boolean) => void;
+  /** Foil/off-foil coloring and maneuver markers for review mode. */
+  foilOverlay?: ReviewFoilOverlay | null;
+  onSelectFoilEvent?: (timeMs: number) => void;
   onChoosePoint?: (point: ForecastPoint) => void;
   onClearPoint?: () => void;
   windSlice?: WindFieldSlice | null;
@@ -245,6 +262,78 @@ type Props = {
   stationsOn?: boolean;
   stations?: StationsResponse | null;
 };
+
+type FoilEventHover = {
+  x: number;
+  y: number;
+  label: string;
+};
+
+type TrackHover = ReviewTrackPoint & {
+  x: number;
+  y: number;
+  markerLon: number;
+  markerLat: number;
+};
+
+function formatReviewClock(timeMs: number): string {
+  return new Date(timeMs).toLocaleString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function TrackHoverCard({
+  hover,
+  units,
+  mapWidth,
+}: {
+  hover: TrackHover;
+  units: UnitPrefs;
+  mapWidth: number;
+}) {
+  const pointLabel = sessionPointLabel(hover.pointDeg);
+  return (
+    <div
+      className="hover-card hover-card-track"
+      style={{
+        left: Math.min(hover.x + 14, mapWidth - 200),
+        top: Math.max(8, hover.y - 8),
+      }}
+    >
+      {hover.timeMs != null && Number.isFinite(hover.timeMs) && (
+        <div className="hover-meta">{formatReviewClock(hover.timeMs)}</div>
+      )}
+      <div className="hover-primary">
+        Speed{" "}
+        {hover.speedMps != null && Number.isFinite(hover.speedMps)
+          ? formatWindSpeed(hover.speedMps, units.wind)
+          : "—"}
+        {typeof hover.onFoil === "boolean"
+          ? ` · ${hover.onFoil ? "On foil" : "Off foil"}`
+          : ""}
+      </div>
+      {pointLabel && <div className="hover-primary">{pointLabel}</div>}
+      {hover.windSpeedMps != null && hover.windDirDeg != null && (
+        <div className="hover-primary">
+          Wind{" "}
+          {formatWind(
+            hover.windSpeedMps,
+            hover.windDirDeg,
+            hover.gustMps,
+            units.wind,
+          )}
+        </div>
+      )}
+      {hover.hsM != null && Number.isFinite(hover.hsM) && (
+        <div className="hover-primary">
+          Wave {formatWaveHeight(hover.hsM, units.wave)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type HoverInfo = {
   lon: number;
@@ -1302,9 +1391,9 @@ function hoverFromMapEvent(
     hsM,
     depthM: onWater ? depthM! : 0,
     fetchM,
-    windSpeedMps: field?.speedMps ?? (windMode ? null : wind?.windSpeedMps ?? null),
+    windSpeedMps: field?.speedMps ?? wind?.windSpeedMps ?? null,
     windDirDeg: field?.dirDeg ?? wind?.windDirDeg ?? null,
-    gustMps: field || windMode ? null : wind?.gustMps ?? null,
+    gustMps: field ? null : (wind?.gustMps ?? null),
     tempC: airC,
   };
 }
@@ -1454,6 +1543,8 @@ export function MapView({
   gpxWindTickIndex = null,
   followCursor = false,
   onFollowCursorChange,
+  foilOverlay = null,
+  onSelectFoilEvent,
   onChoosePoint,
   onClearPoint,
   windSlice = null,
@@ -1496,11 +1587,13 @@ export function MapView({
   const userMovedRef = useRef(false);
   const followCursorRef = useRef(followCursor);
   const onFollowCursorChangeRef = useRef(onFollowCursorChange);
+  const onSelectFoilEventRef = useRef(onSelectFoilEvent);
   const followArmedRef = useRef(false);
   const onChoosePointRef = useRef(onChoosePoint);
   const onClearPointRef = useRef(onClearPoint);
   followCursorRef.current = followCursor;
   onFollowCursorChangeRef.current = onFollowCursorChange;
+  onSelectFoilEventRef.current = onSelectFoilEvent;
   onChoosePointRef.current = onChoosePoint;
   onClearPointRef.current = onClearPoint;
   onSelectLakeRef.current = onSelectLake;
@@ -1516,6 +1609,8 @@ export function MapView({
   gpxWindTicksRef.current = gpxWindTicks;
   const gpxWindTickIndexRef = useRef(gpxWindTickIndex);
   gpxWindTickIndexRef.current = gpxWindTickIndex;
+  const foilOverlayRef = useRef(foilOverlay);
+  foilOverlayRef.current = foilOverlay;
   const stationsRef = useRef(stations);
   stationsRef.current = stations;
   const windUnitRef = useRef(units.wind);
@@ -1523,6 +1618,13 @@ export function MapView({
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const hoverRef = useRef<HoverInfo | null>(null);
   hoverRef.current = hover;
+  const [foilEventHover, setFoilEventHover] = useState<FoilEventHover | null>(
+    null,
+  );
+  const [trackHover, setTrackHover] = useState<TrackHover | null>(null);
+  const trackHoverRef = useRef<TrackHover | null>(null);
+  trackHoverRef.current = trackHover;
+  const drawReviewRef = useRef<() => void>(() => {});
   const [stationHover, setStationHover] = useState<StationHover | null>(null);
   const [selectedStationId, setSelectedStationId] = useState<string | null>(
     null,
@@ -1538,6 +1640,22 @@ export function MapView({
   const [heatmapStyle, setHeatmapStyle] = useState<HeatmapStyle>(() =>
     typeof window !== "undefined" ? loadHeatmapStyle() : "blend",
   );
+  const stationModelWind = useMemo(() => {
+    if (!stationHover) return null;
+    const slice = spatialWindSlice(windSlice, simulating);
+    if (!slice) return null;
+    const [lon, lat] = stationHover.feature.geometry.coordinates;
+    if (typeof lon !== "number" || typeof lat !== "number") return null;
+    return sampleWindField(slice, lon, lat, heatmapStyle);
+  }, [stationHover, windSlice, simulating, heatmapStyle]);
+  const stationWindDelta = stationHover
+    ? formatStationModelWindDelta(
+        stationHover.feature.properties.windSpeedMps,
+        stationHover.feature.properties.windDirDeg,
+        stationModelWind,
+        units.wind,
+      )
+    : null;
   const [radarFrame, setRadarFrame] = useState<RadarFrame>(() =>
     resolveRadarFrame(null, null),
   );
@@ -1634,11 +1752,10 @@ export function MapView({
     [grids],
   );
   const depthIntervalM = grids?.meta.contourIntervalM ?? 1;
-  const { min: legendMin, max: legendMax } = legendRange(
-    overlay,
-    depthMaxM,
-    vmax,
-  );
+  const trackSpeedLegend = Boolean(gpxTrack) && overlay === "wind";
+  const { min: legendMin, max: legendMax } = trackSpeedLegend
+    ? { min: 0, max: TRACK_SPEED_MAX_MPS }
+    : legendRange(overlay, depthMaxM, vmax);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -2047,7 +2164,12 @@ export function MapView({
           "line-join": "round",
         },
         paint: {
-          "line-color": "#c45c1a",
+          "line-color": [
+            "case",
+            ["==", ["get", "onFoil"], true],
+            "#c45c1a",
+            "rgba(28, 36, 32, 0.45)",
+          ],
           "line-width": 3.2,
           "line-opacity": 0.95,
         },
@@ -2075,6 +2197,27 @@ export function MapView({
           ],
           "circle-stroke-color": "#f8f6f0",
           "circle-stroke-width": 2,
+        },
+      });
+
+      map.addSource("gpx-foil-events", { type: "geojson", data: EMPTY_FC });
+      map.addLayer({
+        id: "gpx-foil-events",
+        type: "circle",
+        source: "gpx-foil-events",
+        layout: { visibility: "none" },
+        paint: {
+          "circle-radius": 6,
+          "circle-color": [
+            "case",
+            ["==", ["get", "kind"], "fall"],
+            "#a03030",
+            ["==", ["get", "success"], true],
+            "#1f6f78",
+            "#a04814",
+          ],
+          "circle-stroke-color": "#f8f6f0",
+          "circle-stroke-width": 1.6,
         },
       });
 
@@ -2227,7 +2370,12 @@ export function MapView({
     map.on("movestart", (e) => {
       if (!e.originalEvent) return;
       userMovedRef.current = true;
-      if (followCursorRef.current) onFollowCursorChangeRef.current?.(false);
+      if (
+        followCursorRef.current &&
+        isReviewFollowBreakingGesture(e.originalEvent)
+      ) {
+        onFollowCursorChangeRef.current?.(false);
+      }
     });
 
     const coarseRef = {
@@ -2253,6 +2401,45 @@ export function MapView({
 
     map.on("mousemove", (e: MapMouseEvent) => {
       if (coarseRef.current) return;
+      const foilHit = hitReviewFoilEvent(
+        map,
+        foilOverlayRef.current,
+        e.point,
+      );
+      if (foilHit) {
+        setFoilEventHover({
+          x: e.point.x,
+          y: e.point.y,
+          label: foilHit.label,
+        });
+        setTrackHover(null);
+        setHover(null);
+        map.getCanvas().style.cursor = "pointer";
+        return;
+      }
+      setFoilEventHover(null);
+      const trackPoints = reviewPolylinePoints(
+        foilOverlayRef.current,
+        gpxTrackRef.current,
+      );
+      const trackHit = hitReviewTrack(
+        map,
+        trackPoints,
+        e.point,
+        undefined,
+        reviewFocusRange(trackPoints, gpxCursorRef.current),
+      );
+      if (trackHit) {
+        setTrackHover({
+          ...trackHit,
+          x: e.point.x,
+          y: e.point.y,
+        });
+        setHover(null);
+        map.getCanvas().style.cursor = "pointer";
+        return;
+      }
+      setTrackHover(null);
       if (stationsOnRef.current) {
         const layers = WX_STATION_HIT_LAYERS.filter((id) => map.getLayer(id));
         if (layers.length > 0) {
@@ -2298,6 +2485,52 @@ export function MapView({
     });
 
     map.on("click", (e: MapMouseEvent) => {
+      const foilHit = hitReviewFoilEvent(
+        map,
+        foilOverlayRef.current,
+        e.point,
+      );
+      if (foilHit) {
+        onSelectFoilEventRef.current?.(foilHit.timeMs);
+        setFoilEventHover({
+          x: e.point.x,
+          y: e.point.y,
+          label: foilHit.label,
+        });
+        setTrackHover(null);
+        if (coarseRef.current) {
+          showTapHover(null);
+          window.setTimeout(() => setFoilEventHover(null), 8000);
+        }
+        return;
+      }
+      const trackPoints = reviewPolylinePoints(
+        foilOverlayRef.current,
+        gpxTrackRef.current,
+      );
+      const trackHit = hitReviewTrack(
+        map,
+        trackPoints,
+        e.point,
+        undefined,
+        reviewFocusRange(trackPoints, gpxCursorRef.current),
+      );
+      if (trackHit) {
+        if (trackHit.timeMs != null && Number.isFinite(trackHit.timeMs)) {
+          onSelectFoilEventRef.current?.(trackHit.timeMs);
+        }
+        setTrackHover({
+          ...trackHit,
+          x: e.point.x,
+          y: e.point.y,
+        });
+        setFoilEventHover(null);
+        if (coarseRef.current) {
+          showTapHover(null);
+          window.setTimeout(() => setTrackHover(null), 8000);
+        }
+        return;
+      }
       if (stationsOnRef.current) {
         const stLayers = WX_STATION_HIT_LAYERS.filter((id) => map.getLayer(id));
         if (stLayers.length > 0) {
@@ -2417,6 +2650,8 @@ export function MapView({
     map.on("mouseout", () => {
       if (coarseRef.current) return;
       setHover(null);
+      setFoilEventHover(null);
+      setTrackHover(null);
       if (!selectedStationIdRef.current) setStationHover(null);
     });
 
@@ -2694,8 +2929,16 @@ export function MapView({
         gpxCursorRef.current,
         gpxWindTicksRef.current,
         gpxWindTickIndexRef.current,
+        foilOverlayRef.current,
+        trackHoverRef.current
+          ? {
+              lon: trackHoverRef.current.markerLon,
+              lat: trackHoverRef.current.markerLat,
+            }
+          : null,
       );
     };
+    drawReviewRef.current = draw;
     draw();
     map.on("move", draw);
     map.on("resize", draw);
@@ -2706,7 +2949,11 @@ export function MapView({
       map.off("resize", draw);
       ro.disconnect();
     };
-  }, [ready, gpxTrack, gpxCursor, gpxWindTicks, gpxWindTickIndex]);
+  }, [ready, gpxTrack, gpxCursor, gpxWindTicks, gpxWindTickIndex, foilOverlay]);
+
+  useEffect(() => {
+    drawReviewRef.current();
+  }, [trackHover]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3060,6 +3307,8 @@ export function MapView({
     if (!src) return;
     if (!gpxTrack) {
       src.setData(EMPTY_FC);
+      const evSrc = map.getSource("gpx-foil-events") as GeoJSONSource | undefined;
+      evSrc?.setData(EMPTY_FC);
       return;
     }
     src.setData(gpxTrack.geojson);
@@ -3081,6 +3330,16 @@ export function MapView({
       );
     }
   }, [gpxTrack, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const src = map.getSource("gpx-track") as GeoJSONSource | undefined;
+    const evSrc = map.getSource("gpx-foil-events") as GeoJSONSource | undefined;
+    if (foilOverlay?.trackGeojson) src?.setData(foilOverlay.trackGeojson);
+    else if (gpxTrack) src?.setData(gpxTrack.geojson);
+    evSrc?.setData(foilOverlay?.eventGeojson ?? EMPTY_FC);
+  }, [foilOverlay, gpxTrack, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3119,6 +3378,22 @@ export function MapView({
       travelSrc?.setData(EMPTY_FC);
     }
   }, [gpxCursor, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    applyFollowZoomAround(map, followCursor);
+    const keepCentered = () => {
+      if (!followCursorRef.current) return;
+      const cursor = gpxCursorRef.current;
+      if (!cursor) return;
+      map.jumpTo({ center: [cursor.lon, cursor.lat] });
+    };
+    map.on("zoomend", keepCentered);
+    return () => {
+      map.off("zoomend", keepCentered);
+    };
+  }, [followCursor, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3198,7 +3473,9 @@ export function MapView({
                   ? `GEM 2 m over Alberta (HRDPS, then RDPS / GDPS). ${windGlyph === "arrows" ? "Arrows" : "Particles"} = wind direction.`
                   : "No provincial temperature field this hour."
           : overlay === "wind"
-            ? windFieldStatus === "loading" || windFieldStatus === "idle"
+            ? gpxTrack
+              ? `GPS board speed on the session track. Color = speed, 0–${mpsToWind(TRACK_SPEED_MAX_MPS, units.wind).toFixed(units.wind === "mps" ? 1 : 0)} ${legendUnit("wind", units)}.`
+              : windFieldStatus === "loading" || windFieldStatus === "idle"
               ? "Loading GEM wind field…"
               : windFieldStatus === "error"
                 ? "Wind field unavailable."
@@ -3234,6 +3511,8 @@ export function MapView({
     windGlyph,
     windSlice,
     gpxCursor,
+    gpxTrack,
+    units,
     historic,
     forecastPoint,
     radarOn,
@@ -3425,7 +3704,7 @@ export function MapView({
                 {overlay === "depth"
                   ? `Depth (${legendUnit(overlay, units)})`
                   : overlay === "wind"
-                    ? `Wind speed (${legendUnit(overlay, units)})`
+                    ? `${gpxTrack ? "Track speed" : "Wind speed"} (${legendUnit(overlay, units)})`
                     : overlay === "temp"
                       ? `Temperature (${legendUnit(overlay, units)})`
                       : `Wave height (${legendUnit(overlay, units)})`}
@@ -3510,13 +3789,34 @@ export function MapView({
           </button>
         ) : null}
       </div>
-      {stationHover && (
+      {foilEventHover && (
         <div
           className="hover-card"
           style={{
             left: Math.min(
-              stationHover.x + 14,
+              foilEventHover.x + 14,
               (containerRef.current?.clientWidth ?? 320) - 180,
+            ),
+            top: Math.max(8, foilEventHover.y - 8),
+          }}
+        >
+          <div className="hover-primary">{foilEventHover.label}</div>
+        </div>
+      )}
+      {trackHover && !foilEventHover && (
+        <TrackHoverCard
+          hover={trackHover}
+          units={units}
+          mapWidth={containerRef.current?.clientWidth ?? 320}
+        />
+      )}
+      {stationHover && (
+        <div
+          className="hover-card hover-card-station"
+          style={{
+            left: Math.min(
+              stationHover.x + 14,
+              (containerRef.current?.clientWidth ?? 320) - 240,
             ),
             top: Math.max(8, stationHover.y - 8),
           }}
@@ -3536,6 +3836,9 @@ export function MapView({
                 )
               : "—"}
           </div>
+          {stationWindDelta ? (
+            <div className="hover-meta">{stationWindDelta}</div>
+          ) : null}
           <div className="hover-primary">
             {stationHover.feature.properties.airTempC != null
               ? formatTemp(stationHover.feature.properties.airTempC, units.temp)
@@ -3558,7 +3861,7 @@ export function MapView({
           </div>
         </div>
       )}
-      {hover && !stationHover && (
+      {hover && !stationHover && !trackHover && (
         <div
           className="hover-card"
           style={{

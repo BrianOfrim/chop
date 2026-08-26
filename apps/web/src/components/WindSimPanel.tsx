@@ -195,6 +195,7 @@ export function WindSimPanel({
             type="button"
             className={`review-follow-btn${reviewFollow ? " is-on" : ""}`}
             aria-pressed={reviewFollow}
+            disabled={reviewStatus !== "ready"}
             onClick={() => onReviewFollowChange?.(!reviewFollow)}
           >
             Center on point

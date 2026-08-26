@@ -174,3 +174,68 @@ export function cameraOnResize(input: {
 export function lakeVectorSourceReady(isSourceLoaded: boolean): boolean {
   return isSourceLoaded;
 }
+
+/** Structural event from MapLibre `movestart.originalEvent`. */
+export type MapGestureEvent = {
+  type: string;
+  key?: string;
+  touches?: { length: number };
+  target?: { closest?: (selector: string) => unknown } | null;
+};
+
+/**
+ * Pan/drag should leave "center on point"; wheel, pinch, +/- keys, and the
+ * zoom buttons should keep following and leave the point in the middle.
+ */
+export function isReviewFollowBreakingGesture(
+  originalEvent?: MapGestureEvent | null,
+): boolean {
+  if (!originalEvent) return false;
+  const { type } = originalEvent;
+  if (type === "wheel" || type === "mousewheel") return false;
+  if (type === "keydown" || type === "keyup") {
+    const key = originalEvent.key ?? "";
+    return key !== "+" && key !== "-" && key !== "=" && key !== "_";
+  }
+  const touches = originalEvent.touches;
+  if (type.startsWith("touch") && touches && touches.length >= 2) {
+    return false;
+  }
+  const closest = originalEvent.target?.closest;
+  if (
+    typeof closest === "function" &&
+    closest.call(
+      originalEvent.target,
+      ".maplibregl-ctrl-zoom-in, .maplibregl-ctrl-zoom-out",
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+type ZoomAroundMap = {
+  scrollZoom: {
+    disable: () => void;
+    enable: (options?: { around: "center" } | boolean) => void;
+  };
+  touchZoomRotate: {
+    disable: () => void;
+    enable: (options?: { around: "center" } | boolean) => void;
+    disableRotation: () => void;
+  };
+};
+
+/** When following a review point, zoom around the map center (that point). */
+export function applyFollowZoomAround(map: ZoomAroundMap, follow: boolean): void {
+  map.scrollZoom.disable();
+  map.touchZoomRotate.disable();
+  if (follow) {
+    map.scrollZoom.enable({ around: "center" });
+    map.touchZoomRotate.enable({ around: "center" });
+  } else {
+    map.scrollZoom.enable();
+    map.touchZoomRotate.enable();
+  }
+  map.touchZoomRotate.disableRotation();
+}

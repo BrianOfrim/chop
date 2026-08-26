@@ -437,6 +437,19 @@
   box-shadow: 0 6px 18px rgba(20, 28, 24, 0.12);
 }
 
+.hover-card-track {
+  max-width: 260px;
+}
+
+.hover-card-station {
+  max-width: 280px;
+}
+
+.hover-card-track .hover-meta {
+  margin-top: 0;
+  margin-bottom: 0.2rem;
+}
+
 .hover-primary {
   display: flex;
   align-items: center;
@@ -1393,12 +1406,17 @@
   cursor: pointer;
 }
 
-.review-follow-btn:hover {
+.review-follow-btn:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.review-follow-btn.is-on {
+.review-follow-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.review-follow-btn.is-on:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent);
   background: rgba(31, 111, 120, 0.1);
@@ -1654,6 +1672,171 @@
 .session-speed-dot.selected {
   stroke: #1c201e;
   stroke-width: 1.4;
+}
+
+.session-speed-foil-band {
+  fill: rgba(31, 111, 120, 0.16);
+}
+
+.session-speed-threshold {
+  stroke: #1f6f78;
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+  stroke-opacity: 0.75;
+}
+
+.session-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.15rem 0 0.35rem;
+  min-width: 0;
+}
+
+.session-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+  gap: 0.55rem 0.85rem;
+}
+
+.session-stats-grid h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.session-stats-grid dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.session-stats-grid dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: baseline;
+  font-size: 0.8rem;
+}
+
+.session-stats-grid dt {
+  color: var(--muted);
+}
+
+.session-stats-grid dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.session-stats-sub {
+  display: block;
+  font-weight: 500;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.session-stats-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.session-stats-threshold {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.session-stats-threshold input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.session-maneuver-lane {
+  stroke: rgba(28, 36, 32, 0.12);
+  stroke-width: 1;
+}
+
+.session-maneuver-stem {
+  stroke: rgba(28, 36, 32, 0.22);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.session-maneuver-mark {
+  cursor: pointer;
+}
+
+.session-maneuver-dot {
+  stroke: #f8f6f0;
+  stroke-width: 1.2;
+}
+
+.session-maneuver-mark.is-made .session-maneuver-dot {
+  fill: #1f6f78;
+}
+
+.session-maneuver-mark.is-failed .session-maneuver-dot {
+  fill: #a03030;
+}
+
+.session-maneuver-dot.selected {
+  stroke: #1c201e;
+  stroke-width: 1.5;
+}
+
+.session-maneuver-letter {
+  fill: #f8f6f0;
+  font-size: 7.5px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.session-maneuver-empty {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.session-foil-band {
+  fill: rgba(31, 111, 120, 0.2);
+}
+
+.session-foil-band.is-active {
+  fill: rgba(31, 111, 120, 0.34);
+}
+
+.session-foil-mark {
+  cursor: pointer;
+}
+
+.session-foil-dot {
+  stroke: #f8f6f0;
+  stroke-width: 1.2;
+}
+
+.session-foil-mark.is-takeoff .session-foil-dot {
+  fill: #1f6f78;
+}
+
+.session-foil-mark.is-touchdown .session-foil-dot {
+  fill: #a04814;
+}
+
+.session-foil-mark.is-fall .session-foil-dot {
+  fill: #a03030;
+}
+
+.session-foil-dot.selected {
+  stroke: #1c201e;
+  stroke-width: 1.5;
 }
 
 .session-point-reach {

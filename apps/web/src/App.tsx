@@ -82,11 +82,23 @@ import {
   SessionSpeedChart,
   sessionSpeedLabel,
 } from "./components/SessionSpeedChart";
+import { SessionStatsPanel } from "./components/SessionStatsPanel";
+import { SessionManeuverChart } from "./components/SessionManeuverChart";
+import { SessionFoilChart } from "./components/SessionFoilChart";
 import { formatWeatherHour, isThunder } from "./lib/weather";
 import { parseGpxFile, type GpxTrack } from "./lib/gpx";
 import { StravaPanel } from "./components/StravaPanel";
 import {
+  analyzeFoilSession,
+  DEFAULT_FOIL_THRESHOLDS,
+  FOIL_ANALYSIS_REVISION,
+  loadFoilTakeoffMps,
+  nearestIndexByTime,
+  type FoilAnalysis,
+} from "./lib/foilAnalysis";
+import {
   buildSessionSeries,
+  pointAngleFromPerp,
   sessionDateRange,
   sessionPointLabel,
   type SessionSample,
@@ -242,6 +254,11 @@ export default function App() {
   const [sessionStatus, setSessionStatus] = useState<
     "idle" | "loading" | "ready" | "no-time" | "error"
   >("idle");
+  const [foilTakeoffMps, setFoilTakeoffMps] = useState(() =>
+    typeof window !== "undefined"
+      ? loadFoilTakeoffMps()
+      : DEFAULT_FOIL_THRESHOLDS.takeoffMps,
+  );
   const [reviewFollow, setReviewFollow] = useState(loadReviewFollow);
   const [bottomCollapsed, setBottomCollapsed] = useState(loadBottomCollapsed);
   const [radarOn, setRadarOn] = useState(false);
@@ -806,6 +823,63 @@ export default function App() {
     }
   }, [gpxTrack, grids, sessionHours]);
 
+  const foilAnalysis = useMemo<FoilAnalysis | null>(() => {
+    if (!gpxTrack) return null;
+    return analyzeFoilSession(gpxTrack, sessionHours, {
+      takeoffMps: foilTakeoffMps,
+    });
+  }, [gpxTrack, sessionHours, foilTakeoffMps, FOIL_ANALYSIS_REVISION]);
+
+  const foilOverlay = useMemo(() => {
+    if (!foilAnalysis) return null;
+    return {
+      points: foilAnalysis.points.map((p) => {
+        const sample =
+          sessionSamples.length > 0
+            ? sessionSamples[nearestIndexByTime(sessionSamples, p.timeMs)]
+            : undefined;
+        const windDirDeg = p.windDirDeg ?? sample?.wind.windDirDeg ?? null;
+        return {
+          lon: p.lon,
+          lat: p.lat,
+          onFoil: p.onFoil,
+          timeMs: p.timeMs,
+          speedMps: p.speedSmoothMps,
+          headingDeg: p.headingDeg,
+          windDirDeg,
+          windSpeedMps: sample?.wind.windSpeedMps ?? null,
+          gustMps: sample?.wind.gustMps ?? null,
+          hsM: sample?.hsM ?? null,
+          pointDeg:
+            (windDirDeg != null
+              ? pointAngleFromPerp(p.headingDeg, windDirDeg)
+              : null) ??
+            sample?.pointDeg ??
+            null,
+        };
+      }),
+      events: foilAnalysis.events.map((ev) => ({
+        lon: ev.lon,
+        lat: ev.lat,
+        timeMs: ev.timeMs,
+        kind: ev.kind,
+        success: ev.success,
+        label: ev.label,
+      })),
+      trackGeojson: foilAnalysis.trackGeojson,
+      eventGeojson: foilAnalysis.eventGeojson,
+    };
+  }, [foilAnalysis, sessionSamples]);
+
+  const foilBands = useMemo(
+    () =>
+      foilAnalysis?.segments.map((s) => ({
+        startMs: s.startTimeMs,
+        endMs: s.endTimeMs,
+      })) ?? [],
+    [foilAnalysis],
+  );
+
   // Load 90-day HRDPS archive when entering History mode (cached per lake).
   // Important: do not bail on historyStatus==="loading" — React Strict Mode
   // remounts effects and would otherwise leave the UI stuck loading forever.
@@ -1276,6 +1350,7 @@ export default function App() {
                     lon: sessionSample.lon,
                     lat: sessionSample.lat,
                     headingDeg: sessionSample.headingDeg,
+                    timeMs: sessionSample.timeMs,
                   }
                 : null
             }
@@ -1285,6 +1360,11 @@ export default function App() {
             onFollowCursorChange={(on) => {
               setReviewFollow(on);
               saveReviewFollow(on);
+            }}
+            foilOverlay={mode === "review" ? foilOverlay : null}
+            onSelectFoilEvent={(timeMs) => {
+              if (sessionSamples.length === 0) return;
+              setSessionIndex(nearestIndexByTime(sessionSamples, timeMs));
             }}
             onChoosePoint={(point) => {
               if (!lakeId) return;
@@ -1498,6 +1578,11 @@ export default function App() {
             )}
             {reviewSpeedLabel && <span>Speed {reviewSpeedLabel}</span>}
             {reviewPointLabel && <span>{reviewPointLabel}</span>}
+            {mode === "review" && foilAnalysis && (
+              <span title="Estimated time on foil">
+                Foil {Math.round(foilAnalysis.stats.foilTimePct)}%
+              </span>
+            )}
             {mode === "review" && gpxTrack && (
               <span className="muted" title={gpxTrack.filename}>
                 Track {gpxTrack.label}
@@ -1605,7 +1690,8 @@ export default function App() {
           </div>
           </div>
         </div>
-        {!bottomCollapsed && (radarOn ? (
+        {radarOn ? (
+          !bottomCollapsed && (
           <RadarTimeline
             windows={radarWindows}
             committedIndex={radarIndex}
@@ -1614,8 +1700,43 @@ export default function App() {
             shoreline={shoreline}
             pin={forecastPoint}
           />
-        ) : reviewActive ? (
+          )
+        ) : mode === "review" && gpxTrack ? (
+          (sessionSamples.length > 0 || !bottomCollapsed) && (
           <div id="bottom-charts" className="forecast-panel">
+            {!bottomCollapsed && (
+            <>
+            {foilAnalysis && (
+              <>
+              <CollapsiblePlot id="review-foil" title="Foil">
+                <SessionStatsPanel
+                  key={FOIL_ANALYSIS_REVISION}
+                  analysis={foilAnalysis}
+                  windUnit={units.wind}
+                  takeoffMps={foilTakeoffMps}
+                  onTakeoffMps={setFoilTakeoffMps}
+                />
+              </CollapsiblePlot>
+              <CollapsiblePlot id="review-flights" title="Flights">
+                <SessionFoilChart
+                  key={FOIL_ANALYSIS_REVISION}
+                  analysis={foilAnalysis}
+                  samples={sessionSamples}
+                  sampleIndex={sessionIndex}
+                  onSelectSample={setSessionIndex}
+                />
+              </CollapsiblePlot>
+              <CollapsiblePlot id="review-maneuvers" title="Maneuvers">
+                <SessionManeuverChart
+                  key={FOIL_ANALYSIS_REVISION}
+                  analysis={foilAnalysis}
+                  samples={sessionSamples}
+                  sampleIndex={sessionIndex}
+                  onSelectSample={setSessionIndex}
+                />
+              </CollapsiblePlot>
+              </>
+            )}
             <CollapsiblePlot id="review-wind" title="Wind">
               <SessionWindChart
                 samples={sessionSamples}
@@ -1630,6 +1751,8 @@ export default function App() {
                 sampleIndex={sessionIndex}
                 onSelectSample={setSessionIndex}
                 windUnit={units.wind}
+                foilBands={foilBands}
+                takeoffMps={foilTakeoffMps}
               />
             </CollapsiblePlot>
             <CollapsiblePlot id="review-point" title="Point">
@@ -1647,6 +1770,9 @@ export default function App() {
                 waveUnit={units.wave}
               />
             </CollapsiblePlot>
+            </>
+            )}
+            {sessionSamples.length > 0 && (
             <div className="forecast-plot scrubber-row">
               <div className="forecast-plot-rail scrubber-rail">
                 <button
@@ -1671,9 +1797,11 @@ export default function App() {
                 />
               </div>
             </div>
+            )}
           </div>
+          )
         ) : (
-          showForecastCharts && (
+          !bottomCollapsed && showForecastCharts && (
             <div id="bottom-charts" className="forecast-panel">
               <CollapsiblePlot id="forecast-wind" title="Wind">
                 <WindChart
@@ -1786,7 +1914,7 @@ export default function App() {
               </div>
             </div>
           )
-        ))}
+        )}
       </footer>
     </div>
   );

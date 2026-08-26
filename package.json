@@ -10,7 +10,7 @@
     "dev:web": "npm run dev -w @chop/web",
     "dev:api": "npm run dev -w @chop/api",
     "build": "npm run build -w @chop/wave-engine && npm run build -w @chop/web",
-    "test": "npm run test -w @chop/wave-engine && npm run test -w @chop/api",
+    "test": "npm run test -w @chop/wave-engine && npm run test -w @chop/api && npm run test -w @chop/web",
     "build:lake": ".venv/bin/python scripts/build-lake-assets.py"
   },
   "devDependencies": {
